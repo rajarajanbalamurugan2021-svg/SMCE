@@ -1,0 +1,163 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default-deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Schema Validation Helpers
+    function isValidUserProfile(data) {
+      return data.keys().hasAll(['id', 'email', 'createdAt']) &&
+        data.keys().hasOnly(['id', 'email', 'displayName', 'photoURL', 'createdAt', 'updatedAt']) &&
+        data.id is string && isValidId(data.id) && data.id == request.auth.uid &&
+        data.email is string && data.email.size() <= 128 &&
+        (!('displayName' in data) || (data.displayName is string && data.displayName.size() <= 100)) &&
+        (!('photoURL' in data) || (data.photoURL is string && data.photoURL.size() <= 500)) &&
+        data.createdAt is string && data.createdAt.size() <= 40 &&
+        (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 40));
+    }
+
+    function isValidThresholdSettings(data, userId) {
+      return data.keys().hasAll(['userId', 'stationName', 'altitudeMeters']) &&
+        data.keys().hasOnly([
+          'userId', 'stationName', 'altitudeMeters',
+          'minEquipmentTemp', 'maxEquipmentTemp',
+          'minBatteryTemp', 'maxBatteryTemp',
+          'maxHumidity', 'minPressure', 'maxPressure',
+          'minBatteryVoltage', 'maxBatteryVoltage',
+          'maxCurrent', 'heaterAutoThreshold', 'heaterHysteresis',
+          'soundAlertsEnabled', 'updatedAt'
+        ]) &&
+        data.userId is string && data.userId == userId && data.userId == request.auth.uid &&
+        data.stationName is string && data.stationName.size() <= 120 &&
+        data.altitudeMeters is number &&
+        (!('minEquipmentTemp' in data) || data.minEquipmentTemp is number) &&
+        (!('maxEquipmentTemp' in data) || data.maxEquipmentTemp is number) &&
+        (!('minBatteryTemp' in data) || data.minBatteryTemp is number) &&
+        (!('maxBatteryTemp' in data) || data.maxBatteryTemp is number) &&
+        (!('maxHumidity' in data) || data.maxHumidity is number) &&
+        (!('minPressure' in data) || data.minPressure is number) &&
+        (!('maxPressure' in data) || data.maxPressure is number) &&
+        (!('minBatteryVoltage' in data) || data.minBatteryVoltage is number) &&
+        (!('maxBatteryVoltage' in data) || data.maxBatteryVoltage is number) &&
+        (!('maxCurrent' in data) || data.maxCurrent is number) &&
+        (!('heaterAutoThreshold' in data) || data.heaterAutoThreshold is number) &&
+        (!('heaterHysteresis' in data) || data.heaterHysteresis is number) &&
+        (!('soundAlertsEnabled' in data) || data.soundAlertsEnabled is bool) &&
+        (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 40));
+    }
+
+    function isValidTelemetryLog(data, userId) {
+      return data.keys().hasAll(['id', 'userId', 'timestamp', 'temperature', 'voltage', 'status']) &&
+        data.keys().hasOnly([
+          'id', 'userId', 'timestamp', 'displayTime',
+          'temperature', 'batteryTemp', 'humidity', 'pressure',
+          'voltage', 'current', 'heater', 'status', 'createdAt'
+        ]) &&
+        data.id is string && isValidId(data.id) &&
+        data.userId is string && data.userId == userId && data.userId == request.auth.uid &&
+        data.timestamp is string && data.timestamp.size() <= 40 &&
+        (!('displayTime' in data) || (data.displayTime is string && data.displayTime.size() <= 30)) &&
+        data.temperature is number &&
+        (!('batteryTemp' in data) || data.batteryTemp is number) &&
+        (!('humidity' in data) || data.humidity is number) &&
+        (!('pressure' in data) || data.pressure is number) &&
+        data.voltage is number &&
+        (!('current' in data) || data.current is number) &&
+        (!('heater' in data) || (data.heater in ['ON', 'OFF'])) &&
+        (data.status in ['NORMAL', 'WARNING', 'CRITICAL']) &&
+        (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() <= 40));
+    }
+
+    function isValidAlert(data, userId) {
+      return data.keys().hasAll(['id', 'userId', 'timestamp', 'type', 'sensor', 'message']) &&
+        data.keys().hasOnly([
+          'id', 'userId', 'timestamp', 'displayTime',
+          'type', 'sensor', 'value', 'status', 'message',
+          'acknowledged', 'createdAt'
+        ]) &&
+        data.id is string && isValidId(data.id) &&
+        data.userId is string && data.userId == userId && data.userId == request.auth.uid &&
+        data.timestamp is string && data.timestamp.size() <= 40 &&
+        (!('displayTime' in data) || (data.displayTime is string && data.displayTime.size() <= 30)) &&
+        (data.type in ['CRITICAL', 'WARNING', 'INFO', 'PROTECTION']) &&
+        data.sensor is string && data.sensor.size() <= 120 &&
+        (!('value' in data) || (data.value is string && data.value.size() <= 50)) &&
+        (!('status' in data) || (data.status is string && data.status.size() <= 50)) &&
+        data.message is string && data.message.size() <= 300 &&
+        (!('acknowledged' in data) || data.acknowledged is bool) &&
+        (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() <= 40));
+    }
+
+    // Matches
+    match /users/{userId} {
+      allow get: if isOwner(userId) && isValidId(userId);
+      allow list: if false; // PII isolation: no blanket listing of user profiles
+      allow create: if isOwner(userId) && isValidId(userId) && isValidUserProfile(incoming());
+      allow update: if isOwner(userId) && isValidId(userId) && isValidUserProfile(incoming()) &&
+        incoming().id == existing().id &&
+        incoming().createdAt == existing().createdAt;
+      allow delete: if isOwner(userId) && isValidId(userId);
+
+      // Subcollection: threshold settings
+      match /settings/{settingId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(settingId);
+        allow list: if isOwner(userId) && isValidId(userId);
+        allow create: if isOwner(userId) && isValidId(userId) && isValidId(settingId) &&
+          isValidThresholdSettings(incoming(), userId);
+        allow update: if isOwner(userId) && isValidId(userId) && isValidId(settingId) &&
+          isValidThresholdSettings(incoming(), userId) &&
+          incoming().userId == existing().userId;
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(settingId);
+      }
+
+      // Subcollection: logs
+      match /logs/{logId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(logId);
+        allow list: if isOwner(userId) && isValidId(userId);
+        allow create: if isOwner(userId) && isValidId(userId) && isValidId(logId) &&
+          isValidTelemetryLog(incoming(), userId);
+        allow update: if isOwner(userId) && isValidId(userId) && isValidId(logId) &&
+          isValidTelemetryLog(incoming(), userId) &&
+          incoming().id == existing().id &&
+          incoming().userId == existing().userId;
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(logId);
+      }
+
+      // Subcollection: alerts
+      match /alerts/{alertId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(alertId);
+        allow list: if isOwner(userId) && isValidId(userId);
+        allow create: if isOwner(userId) && isValidId(userId) && isValidId(alertId) &&
+          isValidAlert(incoming(), userId);
+        allow update: if isOwner(userId) && isValidId(userId) && isValidId(alertId) &&
+          isValidAlert(incoming(), userId) &&
+          incoming().id == existing().id &&
+          incoming().userId == existing().userId;
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(alertId);
+      }
+    }
+  }
+}

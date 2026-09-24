@@ -43,6 +43,18 @@ import { AboutSystemView } from './components/AboutSystemView';
 import { ESP32HardwareView } from './components/ESP32HardwareView';
 import { ESP32ConnectModal } from './components/ESP32ConnectModal';
 import { bleManager, BluetoothConnectionStatus, ESP32TelemetryPacket } from './services/bluetoothManager';
+import {
+  signInWithGoogle,
+  signOutUser,
+  onAuthChange,
+  saveThresholdSettingsToCloud,
+  loadThresholdSettingsFromCloud,
+  saveTelemetryLogToCloud,
+  saveAlertToCloud,
+  subscribeToUserLogs,
+  subscribeToUserAlerts,
+} from './services/firebase';
+import type { User } from 'firebase/auth';
 import { Menu, Activity, ShieldCheck, Flame, Radio, Bluetooth } from 'lucide-react';
 
 export default function App() {
@@ -57,6 +69,11 @@ export default function App() {
   const [isOnline, setIsOnline] = useState(true);
   const [packetCount, setPacketCount] = useState(1420);
   const [uptimeSeconds, setUptimeSeconds] = useState(3840);
+
+  // Firebase Authentication & Cloud Sync State
+  const [user, setUser] = useState<User | null>(null);
+  const [isCloudSyncing, setIsCloudSyncing] = useState(false);
+  const lastCloudLogTimeRef = useRef<number>(0);
 
   // Simulation State
   const [simState, setSimState] = useState<SimulationState>(INITIAL_SIM_STATE);
@@ -168,6 +185,75 @@ export default function App() {
     return () => clearInterval(timer);
   }, []);
 
+  // Firebase Auth State Listener & Cloud Settings Sync
+  useEffect(() => {
+    const unsubscribe = onAuthChange(async (currentUser) => {
+      setUser(currentUser);
+      if (currentUser) {
+        setIsCloudSyncing(true);
+        try {
+          const cloudSettings = await loadThresholdSettingsFromCloud(currentUser.uid);
+          if (cloudSettings) {
+            setSettings(cloudSettings);
+            saveThresholdSettings(cloudSettings);
+          } else {
+            // Push initial settings to cloud
+            await saveThresholdSettingsToCloud(currentUser.uid, settings);
+          }
+        } catch (err) {
+          console.warn('Failed to load cloud settings on login', err);
+        } finally {
+          setIsCloudSyncing(false);
+        }
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // Subscribe to Cloud Logs and Alerts when user is signed in
+  useEffect(() => {
+    if (!user) return;
+    const unsubLogs = subscribeToUserLogs(user.uid, (cloudLogs) => {
+      if (cloudLogs.length > 0) {
+        setLogs((prev) => {
+          const map = new Map<string, LogEntry>();
+          cloudLogs.forEach((l) => map.set(l.id, l));
+          prev.forEach((l) => {
+            if (!map.has(l.id)) map.set(l.id, l);
+          });
+          const merged = Array.from(map.values())
+            .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+            .slice(0, 300);
+          saveStoredLogs(merged);
+          return merged;
+        });
+      }
+    });
+
+    const unsubAlerts = subscribeToUserAlerts(user.uid, (cloudAlerts) => {
+      if (cloudAlerts.length > 0) {
+        setAlerts((prev) => {
+          const map = new Map<string, AlertItem>();
+          cloudAlerts.forEach((a) => map.set(a.id, a));
+          prev.forEach((a) => {
+            if (!map.has(a.id)) map.set(a.id, a);
+          });
+          const merged = Array.from(map.values())
+            .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+            .slice(0, 100);
+          saveStoredAlerts(merged);
+          return merged;
+        });
+      }
+    });
+
+    return () => {
+      unsubLogs();
+      unsubAlerts();
+    };
+  }, [user]);
+
   // Register Web Bluetooth callbacks
   useEffect(() => {
     bleManager.setCallbacks(
@@ -251,6 +337,17 @@ export default function App() {
           });
         }
 
+        if (user) {
+          const nowMs = Date.now();
+          if (nowMs - lastCloudLogTimeRef.current > 6000 || newLog.status !== 'NORMAL') {
+            lastCloudLogTimeRef.current = nowMs;
+            saveTelemetryLogToCloud(user.uid, newLog).catch(() => {});
+          }
+          if (protAlerts.length > 0) {
+            protAlerts.forEach((alt) => saveAlertToCloud(user.uid, alt).catch(() => {}));
+          }
+        }
+
         setPacketCount((p) => p + 1);
       },
       (status: BluetoothConnectionStatus, errorMsg?: string) => {
@@ -269,7 +366,7 @@ export default function App() {
         }
       }
     );
-  }, [settings, protection]);
+  }, [settings, protection, user]);
 
   // Main Telemetry & Protection Engine Loop (Software Simulator fallback when not on BLE)
   useEffect(() => {
@@ -375,11 +472,22 @@ export default function App() {
         });
       }
 
+      if (user) {
+        const nowMs = Date.now();
+        if (nowMs - lastCloudLogTimeRef.current > 8000 || newLog.status !== 'NORMAL') {
+          lastCloudLogTimeRef.current = nowMs;
+          saveTelemetryLogToCloud(user.uid, newLog).catch(() => {});
+        }
+        if (incomingAlerts.length > 0) {
+          incomingAlerts.forEach((alt) => saveAlertToCloud(user.uid, alt).catch(() => {}));
+        }
+      }
+
       setPacketCount((p) => p + 1);
     }, simState.intervalMs);
 
     return () => clearInterval(timer);
-  }, [isOnline, simState, protection, settings, alerts]);
+  }, [isOnline, simState, protection, settings, alerts, user]);
 
   // Active current reading
   const currentReading: SensorReading = useMemo(() => {
@@ -461,9 +569,39 @@ export default function App() {
     }));
   };
 
-  const handleSaveSettings = (newSettings: ThresholdSettings) => {
+  const handleSaveSettings = async (newSettings: ThresholdSettings) => {
     setSettings(newSettings);
     saveThresholdSettings(newSettings);
+    if (user) {
+      setIsCloudSyncing(true);
+      try {
+        await saveThresholdSettingsToCloud(user.uid, newSettings);
+      } catch (err) {
+        console.warn('Failed to sync settings to Firestore:', err);
+      } finally {
+        setIsCloudSyncing(false);
+      }
+    }
+  };
+
+  const handleSignIn = async () => {
+    try {
+      setIsCloudSyncing(true);
+      await signInWithGoogle();
+    } catch (err) {
+      console.error('Sign-in error:', err);
+    } finally {
+      setIsCloudSyncing(false);
+    }
+  };
+
+  const handleSignOut = async () => {
+    try {
+      await signOutUser();
+      setUser(null);
+    } catch (err) {
+      console.error('Sign-out error:', err);
+    }
   };
 
   const handleClearLogs = () => {
@@ -524,6 +662,10 @@ export default function App() {
         bleStatus={bleStatus}
         onOpenBleModal={() => setIsBleModalOpen(true)}
         bleDeviceName={bleDeviceName}
+        user={user}
+        onSignIn={handleSignIn}
+        onSignOut={handleSignOut}
+        isCloudSyncing={isCloudSyncing}
       />
 
       <div className="flex-1 flex flex-col md:flex-row w-full">

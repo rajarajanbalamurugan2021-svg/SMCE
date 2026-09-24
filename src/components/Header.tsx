@@ -14,9 +14,15 @@ import {
   Volume2,
   VolumeX,
   Layers,
+  Cloud,
+  CloudCheck,
+  LogIn,
+  LogOut,
+  User as UserIcon,
 } from 'lucide-react';
 import { ThresholdSettings } from '../types/smce';
 import { BluetoothConnectionStatus } from '../services/bluetoothManager';
+import type { User } from 'firebase/auth';
 
 interface HeaderProps {
   isOnline: boolean;
@@ -29,6 +35,10 @@ interface HeaderProps {
   bleStatus: BluetoothConnectionStatus;
   onOpenBleModal: () => void;
   bleDeviceName?: string;
+  user?: User | null;
+  onSignIn?: () => void;
+  onSignOut?: () => void;
+  isCloudSyncing?: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -42,6 +52,10 @@ export const Header: React.FC<HeaderProps> = ({
   bleStatus,
   onOpenBleModal,
   bleDeviceName,
+  user,
+  onSignIn,
+  onSignOut,
+  isCloudSyncing = false,
 }) => {
   const [currentDateTime, setCurrentDateTime] = useState<Date>(new Date());
 
@@ -203,6 +217,51 @@ export const Header: React.FC<HeaderProps> = ({
               </>
             )}
           </button>
+
+          {/* Firebase Authentication & Cloud Sync */}
+          {user ? (
+            <div className="flex items-center gap-1.5 pl-1 border-l border-slate-800">
+              <div
+                className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700/80 text-xs font-mono"
+                title={`Signed in as ${user.email || user.displayName || 'Operator'}`}
+              >
+                {user.photoURL ? (
+                  <img
+                    src={user.photoURL}
+                    alt={user.displayName || 'User'}
+                    className="w-4 h-4 rounded-full border border-blue-400/60 object-cover"
+                    referrerPolicy="no-referrer"
+                  />
+                ) : (
+                  <UserIcon className="w-3.5 h-3.5 text-blue-400" />
+                )}
+                <span className="text-slate-200 max-w-[90px] sm:max-w-[130px] truncate hidden md:inline">
+                  {user.displayName || user.email?.split('@')[0]}
+                </span>
+                <span className="flex items-center gap-1 text-[10px] text-emerald-400 bg-emerald-950/60 border border-emerald-800/80 px-1.5 py-0.5 rounded font-mono">
+                  <Cloud className={`w-2.5 h-2.5 text-emerald-400 ${isCloudSyncing ? 'animate-pulse' : ''}`} />
+                  <span className="hidden xl:inline">SYNCED</span>
+                </span>
+              </div>
+              <button
+                onClick={onSignOut}
+                title="Sign out of Firebase"
+                className="p-1.5 rounded-lg bg-slate-900 hover:bg-rose-950/60 border border-slate-700 hover:border-rose-500 text-slate-400 hover:text-rose-300 transition-all text-xs"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={onSignIn}
+              title="Sign in with Google to sync telemetry logs and settings to Firestore"
+              className="px-3 py-1.5 rounded-lg border border-blue-500/60 bg-blue-950/70 hover:bg-blue-900/80 text-blue-200 hover:text-white text-xs font-mono font-bold transition-all flex items-center gap-1.5 shadow-sm shadow-blue-950/50"
+            >
+              <LogIn className="w-3.5 h-3.5 text-blue-400" />
+              <span className="hidden sm:inline">Sign In</span>
+              <span className="text-[10px] text-blue-300/80 bg-blue-900/60 px-1 py-0.5 rounded">Cloud</span>
+            </button>
+          )}
         </div>
       </div>
     </header>

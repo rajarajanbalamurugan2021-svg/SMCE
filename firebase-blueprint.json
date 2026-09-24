@@ -1,0 +1,262 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile information for authenticated operators",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "The unique Firebase Auth UID"
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "User email address"
+        },
+        "displayName": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "User display name"
+        },
+        "photoURL": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "Profile avatar image URL"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO timestamp of account creation"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO timestamp of profile update"
+        }
+      },
+      "required": ["id", "email", "createdAt"]
+    },
+    "ThresholdSettingsEntity": {
+      "title": "ThresholdSettingsEntity",
+      "description": "Station environmental and protection threshold configurations",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Owner user UID"
+        },
+        "stationName": {
+          "type": "string",
+          "maxLength": 120,
+          "description": "Station testbed location name"
+        },
+        "altitudeMeters": {
+          "type": "number",
+          "description": "Station altitude in meters above sea level"
+        },
+        "minEquipmentTemp": {
+          "type": "number",
+          "description": "Minimum safe equipment temp in degrees Celsius"
+        },
+        "maxEquipmentTemp": {
+          "type": "number",
+          "description": "Maximum safe equipment temp in degrees Celsius"
+        },
+        "minBatteryTemp": {
+          "type": "number",
+          "description": "Minimum safe battery temp in degrees Celsius"
+        },
+        "maxBatteryTemp": {
+          "type": "number",
+          "description": "Maximum safe battery temp in degrees Celsius"
+        },
+        "maxHumidity": {
+          "type": "number",
+          "description": "Maximum relative humidity percentage"
+        },
+        "minPressure": {
+          "type": "number",
+          "description": "Minimum ambient pressure in hPa"
+        },
+        "maxPressure": {
+          "type": "number",
+          "description": "Maximum ambient pressure in hPa"
+        },
+        "minBatteryVoltage": {
+          "type": "number",
+          "description": "Minimum battery cutoff voltage in Volts"
+        },
+        "maxBatteryVoltage": {
+          "type": "number",
+          "description": "Maximum battery pack voltage in Volts"
+        },
+        "maxCurrent": {
+          "type": "number",
+          "description": "Maximum battery current draw in Amperes"
+        },
+        "heaterAutoThreshold": {
+          "type": "number",
+          "description": "Temperature threshold below which heating is triggered"
+        },
+        "heaterHysteresis": {
+          "type": "number",
+          "description": "Hysteresis band in degrees Celsius"
+        },
+        "soundAlertsEnabled": {
+          "type": "boolean",
+          "description": "Whether audible buzzer warnings are enabled"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when settings were last saved"
+        }
+      },
+      "required": ["userId", "stationName", "altitudeMeters"]
+    },
+    "TelemetryLogRecord": {
+      "title": "TelemetryLogRecord",
+      "description": "Individual sensor and telemetry log recorded from Ladakh testbed",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 128,
+          "description": "Unique log record ID"
+        },
+        "userId": {
+          "type": "string",
+          "description": "Operator user ID"
+        },
+        "timestamp": {
+          "type": "string",
+          "description": "ISO timestamp of telemetry point"
+        },
+        "displayTime": {
+          "type": "string",
+          "maxLength": 30,
+          "description": "Formatted time display"
+        },
+        "temperature": {
+          "type": "number",
+          "description": "Equipment temperature in Celsius"
+        },
+        "batteryTemp": {
+          "type": "number",
+          "description": "Battery pack temperature in Celsius"
+        },
+        "humidity": {
+          "type": "number",
+          "description": "Relative humidity percentage"
+        },
+        "pressure": {
+          "type": "number",
+          "description": "Atmospheric pressure in hPa"
+        },
+        "voltage": {
+          "type": "number",
+          "description": "Pack voltage in V"
+        },
+        "current": {
+          "type": "number",
+          "description": "Pack current in A"
+        },
+        "heater": {
+          "type": "string",
+          "enum": ["ON", "OFF"],
+          "description": "Heater activation state"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["NORMAL", "WARNING", "CRITICAL"],
+          "description": "Overall health state"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when logged"
+        }
+      },
+      "required": ["id", "userId", "timestamp", "temperature", "voltage", "status"]
+    },
+    "AlertRecord": {
+      "title": "AlertRecord",
+      "description": "Environmental and safety alerts generated during monitoring",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 128,
+          "description": "Unique alert ID"
+        },
+        "userId": {
+          "type": "string",
+          "description": "Operator user ID"
+        },
+        "timestamp": {
+          "type": "string",
+          "description": "ISO timestamp when alert occurred"
+        },
+        "displayTime": {
+          "type": "string",
+          "maxLength": 30,
+          "description": "Display time string"
+        },
+        "type": {
+          "type": "string",
+          "enum": ["CRITICAL", "WARNING", "INFO", "PROTECTION"],
+          "description": "Severity type of alert"
+        },
+        "sensor": {
+          "type": "string",
+          "maxLength": 120,
+          "description": "Sensor name or system source"
+        },
+        "value": {
+          "type": "string",
+          "maxLength": 50,
+          "description": "Value display string with unit"
+        },
+        "status": {
+          "type": "string",
+          "maxLength": 50,
+          "description": "Status condition descriptor"
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 300,
+          "description": "Detailed explanation of trigger"
+        },
+        "acknowledged": {
+          "type": "boolean",
+          "description": "Whether operator acknowledged alert"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation timestamp"
+        }
+      },
+      "required": ["id", "userId", "timestamp", "type", "sensor", "message"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "Private user profile documents"
+    },
+    "/users/{userId}/settings/{settingId}": {
+      "schema": "ThresholdSettingsEntity",
+      "description": "User specific threshold parameters and station configuration"
+    },
+    "/users/{userId}/logs/{logId}": {
+      "schema": "TelemetryLogRecord",
+      "description": "Historical telemetry entries recorded by operator"
+    },
+    "/users/{userId}/alerts/{alertId}": {
+      "schema": "AlertRecord",
+      "description": "System and safety alerts for operator station"
+    }
+  }
+}
