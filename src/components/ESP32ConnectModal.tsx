@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { BluetoothConnectionStatus } from '../services/bluetoothManager';
+import { BluetoothConnectionStatus, bleManager } from '../services/bluetoothManager';
 import { ESP32_ARDUINO_CODE, ESP32_CIRCUIT_DIAGRAM_TEXT } from '../services/esp32Firmware';
 import {
   Bluetooth,
@@ -152,6 +152,8 @@ export const ESP32ConnectModal: React.FC<ESP32ConnectModalProps> = ({
                     className={`w-12 h-12 rounded-xl flex items-center justify-center border ${
                       status === 'CONNECTED'
                         ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40 shadow-lg shadow-emerald-500/20'
+                        : status === 'RECONNECTING'
+                        ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 animate-pulse shadow-lg shadow-amber-500/20'
                         : status === 'CONNECTING'
                         ? 'bg-amber-500/20 text-amber-400 border-amber-500/40 animate-pulse'
                         : 'bg-slate-800/80 text-slate-400 border-slate-700'
@@ -159,6 +161,8 @@ export const ESP32ConnectModal: React.FC<ESP32ConnectModalProps> = ({
                   >
                     {status === 'CONNECTED' ? (
                       <BluetoothConnected className="w-6 h-6 text-emerald-400" />
+                    ) : status === 'RECONNECTING' ? (
+                      <Bluetooth className="w-6 h-6 text-amber-400 animate-spin" />
                     ) : (
                       <Bluetooth className="w-6 h-6" />
                     )}
@@ -171,6 +175,8 @@ export const ESP32ConnectModal: React.FC<ESP32ConnectModalProps> = ({
                         className={`text-xs font-mono font-bold px-2 py-0.5 rounded border ${
                           status === 'CONNECTED'
                             ? 'bg-emerald-950 text-emerald-300 border-emerald-700'
+                            : status === 'RECONNECTING'
+                            ? 'bg-amber-950 text-amber-300 border-amber-600 animate-pulse'
                             : status === 'CONNECTING'
                             ? 'bg-amber-950 text-amber-300 border-amber-700'
                             : 'bg-slate-800 text-slate-400 border-slate-700'
@@ -182,12 +188,14 @@ export const ESP32ConnectModal: React.FC<ESP32ConnectModalProps> = ({
                     <div className="text-sm font-semibold text-white font-mono mt-0.5">
                       {status === 'CONNECTED'
                         ? `Connected: ${deviceName || 'SMCE_LADAKH_ESP32'}`
+                        : status === 'RECONNECTING'
+                        ? `Auto-Reconnecting to ${bleManager.getLastDeviceName() || 'ESP32'}...`
                         : 'No Hardware Paired via Bluetooth'}
                     </div>
                   </div>
                 </div>
 
-                {/* Connect / Disconnect Buttons */}
+                {/* Connect / Disconnect / Reconnect Buttons */}
                 <div className="flex flex-wrap items-center gap-2">
                   {status === 'CONNECTED' ? (
                     <button
@@ -197,6 +205,22 @@ export const ESP32ConnectModal: React.FC<ESP32ConnectModalProps> = ({
                       <BluetoothOff className="w-4 h-4" />
                       Disconnect ESP32
                     </button>
+                  ) : status === 'RECONNECTING' ? (
+                    <>
+                      <button
+                        onClick={() => bleManager.retryReconnectNow()}
+                        className="px-3.5 py-2 rounded-lg text-xs font-mono font-bold bg-amber-600 hover:bg-amber-500 text-white shadow-md transition-all flex items-center gap-1.5"
+                      >
+                        <Bluetooth className="w-4 h-4 animate-spin" />
+                        Retry Now
+                      </button>
+                      <button
+                        onClick={() => bleManager.cancelReconnect()}
+                        className="px-3.5 py-2 rounded-lg text-xs font-mono font-bold bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-all"
+                      >
+                        Cancel Reconnect
+                      </button>
+                    </>
                   ) : (
                     <>
                       <button

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { BluetoothConnectionStatus } from '../services/bluetoothManager';
+import { BluetoothConnectionStatus, bleManager } from '../services/bluetoothManager';
 import { ESP32_ARDUINO_CODE, ESP32_CIRCUIT_DIAGRAM_TEXT } from '../services/esp32Firmware';
 import {
   Bluetooth,
@@ -104,6 +104,22 @@ export const ESP32HardwareView: React.FC<ESP32HardwareViewProps> = ({
               <BluetoothOff className="w-4 h-4" />
               Disconnect ESP32
             </button>
+          ) : status === 'RECONNECTING' ? (
+            <>
+              <button
+                onClick={() => bleManager.retryReconnectNow()}
+                className="px-4 py-2.5 rounded-xl font-mono text-xs font-bold bg-amber-600 hover:bg-amber-500 text-white shadow-lg shadow-amber-600/30 transition-all flex items-center gap-2"
+              >
+                <Bluetooth className="w-4 h-4 animate-spin" />
+                Retry Reconnect Now
+              </button>
+              <button
+                onClick={() => bleManager.cancelReconnect()}
+                className="px-4 py-2.5 rounded-xl font-mono text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-all"
+              >
+                Cancel Reconnect
+              </button>
+            </>
           ) : (
             <>
               <button
@@ -178,11 +194,15 @@ export const ESP32HardwareView: React.FC<ESP32HardwareViewProps> = ({
                 className={`w-10 h-10 rounded-lg flex items-center justify-center border ${
                   status === 'CONNECTED'
                     ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40'
+                    : status === 'RECONNECTING'
+                    ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 animate-pulse'
                     : 'bg-slate-800 text-slate-400 border-slate-700'
                 }`}
               >
                 {status === 'CONNECTED' ? (
                   <BluetoothConnected className="w-5 h-5 text-emerald-400" />
+                ) : status === 'RECONNECTING' ? (
+                  <Bluetooth className="w-5 h-5 text-amber-400 animate-spin" />
                 ) : (
                   <Bluetooth className="w-5 h-5" />
                 )}
@@ -190,7 +210,11 @@ export const ESP32HardwareView: React.FC<ESP32HardwareViewProps> = ({
               <div>
                 <div className="text-[10px] font-mono text-slate-400 uppercase">Bluetooth GATT Link</div>
                 <div className="text-sm font-bold font-mono text-white mt-0.5">
-                  {status === 'CONNECTED' ? 'ACTIVE & STREAMING' : status}
+                  {status === 'CONNECTED'
+                    ? 'ACTIVE & STREAMING'
+                    : status === 'RECONNECTING'
+                    ? 'AUTO-RECONNECTING'
+                    : status}
                 </div>
               </div>
             </div>

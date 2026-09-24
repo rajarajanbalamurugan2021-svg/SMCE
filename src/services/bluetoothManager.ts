@@ -29,12 +29,22 @@ export interface ESP32TelemetryPacket {
 export type BluetoothConnectionStatus = 
   | 'DISCONNECTED'
   | 'CONNECTING'
+  | 'RECONNECTING'
   | 'CONNECTED'
   | 'ERROR'
   | 'UNSUPPORTED';
 
+export interface ReconnectState {
+  isReconnecting: boolean;
+  attempt: number;
+  maxAttempts: number;
+  deviceName: string;
+}
+
 export class BluetoothManager {
   private device: BluetoothDevice | null = null;
+  private lastDevice: BluetoothDevice | null = null;
+  private lastDeviceName: string = '';
   private server: BluetoothRemoteGATTServer | null = null;
   private rxCharacteristic: BluetoothRemoteGATTCharacteristic | null = null;
   private txCharacteristic: BluetoothRemoteGATTCharacteristic | null = null;
@@ -45,9 +55,30 @@ export class BluetoothManager {
   private simTimer: any = null;
   private simulatedHeaterState: 'ON' | 'OFF' = 'OFF';
 
+  // Auto-reconnect state
+  private autoReconnect: boolean = true;
+  private maxReconnectAttempts: number = 5;
+  private currentReconnectAttempt: number = 0;
+  private reconnectTimeoutId: any = null;
+  private isReconnecting: boolean = false;
+  private userRequestedDisconnect: boolean = false;
+  private reconnectDelayBaseMs: number = 2500;
+
   constructor() {
     this.handleDisconnection = this.handleDisconnection.bind(this);
     this.handleCharacteristicValueChanged = this.handleCharacteristicValueChanged.bind(this);
+
+    // Restore last device name from storage if available
+    if (typeof localStorage !== 'undefined') {
+      const savedName = localStorage.getItem('smce_last_ble_device_name');
+      if (savedName) {
+        this.lastDeviceName = savedName;
+      }
+      const savedAutoReconnect = localStorage.getItem('smce_ble_auto_reconnect');
+      if (savedAutoReconnect !== null) {
+        this.autoReconnect = savedAutoReconnect === 'true';
+      }
+    }
   }
 
   public isSupported(): boolean {
@@ -83,9 +114,46 @@ export class BluetoothManager {
     this.onStatusChangeCallback = onStatusChange;
   }
 
+  public setAutoReconnect(enabled: boolean): void {
+    this.autoReconnect = enabled;
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('smce_ble_auto_reconnect', String(enabled));
+    }
+    if (!enabled && this.isReconnecting) {
+      this.cancelReconnect();
+    }
+  }
+
+  public isAutoReconnectEnabled(): boolean {
+    return this.autoReconnect;
+  }
+
+  public getReconnectState(): ReconnectState {
+    return {
+      isReconnecting: this.isReconnecting,
+      attempt: this.currentReconnectAttempt,
+      maxAttempts: this.maxReconnectAttempts,
+      deviceName: this.lastDeviceName || 'ESP32 Device',
+    };
+  }
+
+  public cancelReconnect(): void {
+    if (this.reconnectTimeoutId) {
+      clearTimeout(this.reconnectTimeoutId);
+      this.reconnectTimeoutId = null;
+    }
+    this.isReconnecting = false;
+    this.currentReconnectAttempt = 0;
+    if (this.onStatusChangeCallback) {
+      this.onStatusChangeCallback('DISCONNECTED', 'Auto-reconnect cancelled.');
+    }
+  }
+
   public connectSimulatedHardware(name: string = 'SMCE_LADAKH_ESP32_SIM'): void {
+    this.cancelReconnect();
     this.disconnect();
     this.simulatedMode = true;
+    this.lastDeviceName = name;
     if (this.onStatusChangeCallback) {
       this.onStatusChangeCallback('CONNECTED');
     }
@@ -127,6 +195,9 @@ export class BluetoothManager {
   }
 
   public async connect(): Promise<boolean> {
+    this.userRequestedDisconnect = false;
+    this.cancelReconnect();
+
     if (this.isPermissionBlocked()) {
       if (this.onStatusChangeCallback) {
         this.onStatusChangeCallback(
@@ -170,63 +241,14 @@ export class BluetoothManager {
         throw new Error('No device selected');
       }
 
-      this.device.addEventListener('gattserverdisconnected', this.handleDisconnection);
-
-      // Connect to GATT Server
-      this.server = await this.device.gatt?.connect() || null;
-      if (!this.server) {
-        throw new Error('Could not connect to GATT Server on ESP32');
+      // Store device reference for auto-reconnect
+      this.lastDevice = this.device;
+      this.lastDeviceName = this.device.name || 'SMCE_LADAKH_ESP32';
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('smce_last_ble_device_name', this.lastDeviceName);
       }
 
-      // Retrieve primary service
-      let service: BluetoothRemoteGATTService | null = null;
-      try {
-        service = await this.server.getPrimaryService(SMCE_BLE_CONFIG.SERVICE_UUID);
-      } catch (err) {
-        // Fallback: search for first available service
-        const services = await this.server.getPrimaryServices();
-        if (services.length > 0) {
-          service = services[0];
-        } else {
-          throw new Error('No compatible BLE GATT service found on ESP32');
-        }
-      }
-
-      if (!service) {
-        throw new Error('Failed to obtain GATT telemetry service');
-      }
-
-      // Retrieve TX Characteristic (Notify from ESP32 -> Web)
-      try {
-        this.txCharacteristic = await service.getCharacteristic(SMCE_BLE_CONFIG.TX_CHARACTERISTIC_UUID);
-      } catch (err) {
-        // Fallback: find any notify characteristic
-        const chars = await service.getCharacteristics();
-        this.txCharacteristic = chars.find((c: any) => c.properties.notify || c.properties.indicate) || null;
-      }
-
-      if (this.txCharacteristic) {
-        await this.txCharacteristic.startNotifications();
-        this.txCharacteristic.addEventListener(
-          'characteristicvaluechanged',
-          this.handleCharacteristicValueChanged
-        );
-      }
-
-      // Retrieve RX Characteristic (Web -> ESP32 Write for commands like HEATER_ON/OFF)
-      try {
-        this.rxCharacteristic = await service.getCharacteristic(SMCE_BLE_CONFIG.RX_CHARACTERISTIC_UUID);
-      } catch (err) {
-        const chars = await service.getCharacteristics();
-        this.rxCharacteristic = chars.find((c: any) => c.properties.write || c.properties.writeWithoutResponse) || null;
-      }
-
-      this.simulatedMode = false;
-      if (this.onStatusChangeCallback) {
-        this.onStatusChangeCallback('CONNECTED');
-      }
-
-      return true;
+      return await this.setupGattConnection(this.device);
     } catch (error: any) {
       const isPolicyDisallowed =
         error?.name === 'SecurityError' ||
@@ -259,7 +281,197 @@ export class BluetoothManager {
     }
   }
 
+  /**
+   * Sets up GATT services and notification listeners on a BluetoothDevice
+   */
+  private async setupGattConnection(targetDevice: BluetoothDevice): Promise<boolean> {
+    try {
+      this.device = targetDevice;
+      this.lastDevice = targetDevice;
+      this.lastDeviceName = targetDevice.name || this.lastDeviceName || 'SMCE_ESP32';
+
+      targetDevice.removeEventListener('gattserverdisconnected', this.handleDisconnection);
+      targetDevice.addEventListener('gattserverdisconnected', this.handleDisconnection);
+
+      // Connect to GATT Server
+      this.server = await targetDevice.gatt?.connect();
+      if (!this.server) {
+        throw new Error('Could not connect to GATT Server on ESP32');
+      }
+
+      // Retrieve primary service
+      let service: BluetoothRemoteGATTService | null = null;
+      try {
+        service = await this.server.getPrimaryService(SMCE_BLE_CONFIG.SERVICE_UUID);
+      } catch {
+        // Fallback: search for first available service
+        const services = await this.server.getPrimaryServices();
+        if (services.length > 0) {
+          service = services[0];
+        } else {
+          throw new Error('No compatible BLE GATT service found on ESP32');
+        }
+      }
+
+      if (!service) {
+        throw new Error('Failed to obtain GATT telemetry service');
+      }
+
+      // Retrieve TX Characteristic (Notify from ESP32 -> Web)
+      try {
+        this.txCharacteristic = await service.getCharacteristic(SMCE_BLE_CONFIG.TX_CHARACTERISTIC_UUID);
+      } catch {
+        // Fallback: find any notify characteristic
+        const chars = await service.getCharacteristics();
+        this.txCharacteristic = chars.find((c: any) => c.properties.notify || c.properties.indicate) || null;
+      }
+
+      if (this.txCharacteristic) {
+        await this.txCharacteristic.startNotifications();
+        this.txCharacteristic.addEventListener(
+          'characteristicvaluechanged',
+          this.handleCharacteristicValueChanged
+        );
+      }
+
+      // Retrieve RX Characteristic (Web -> ESP32 Write for commands like HEATER_ON/OFF)
+      try {
+        this.rxCharacteristic = await service.getCharacteristic(SMCE_BLE_CONFIG.RX_CHARACTERISTIC_UUID);
+      } catch {
+        const chars = await service.getCharacteristics();
+        this.rxCharacteristic = chars.find((c: any) => c.properties.write || c.properties.writeWithoutResponse) || null;
+      }
+
+      this.simulatedMode = false;
+      this.isReconnecting = false;
+      this.currentReconnectAttempt = 0;
+
+      if (this.onStatusChangeCallback) {
+        this.onStatusChangeCallback('CONNECTED');
+      }
+
+      return true;
+    } catch (err: any) {
+      console.warn('GATT setup failed:', err?.message || err);
+      throw err;
+    }
+  }
+
+  /**
+   * Schedules and executes an auto-reconnect attempt to the last known ESP32 device
+   */
+  private startAutoReconnect(): void {
+    if (this.userRequestedDisconnect || !this.autoReconnect) {
+      this.isReconnecting = false;
+      this.currentReconnectAttempt = 0;
+      if (this.onStatusChangeCallback) {
+        this.onStatusChangeCallback('DISCONNECTED');
+      }
+      return;
+    }
+
+    if (this.currentReconnectAttempt >= this.maxReconnectAttempts) {
+      this.isReconnecting = false;
+      this.currentReconnectAttempt = 0;
+      if (this.onStatusChangeCallback) {
+        this.onStatusChangeCallback(
+          'DISCONNECTED',
+          `Auto-reconnect failed after ${this.maxReconnectAttempts} attempts. ESP32 may be powered off or out of range.`
+        );
+      }
+      return;
+    }
+
+    this.currentReconnectAttempt++;
+    this.isReconnecting = true;
+
+    const deviceLabel = this.lastDevice?.name || this.lastDeviceName || 'ESP32 device';
+    // Backoff delay: 2.5s, 4s, 5.5s, 7s...
+    const delay = Math.min(8000, this.reconnectDelayBaseMs + (this.currentReconnectAttempt - 1) * 1500);
+
+    if (this.onStatusChangeCallback) {
+      this.onStatusChangeCallback(
+        'RECONNECTING',
+        `Signal lost. Reconnecting to ${deviceLabel} (attempt ${this.currentReconnectAttempt}/${this.maxReconnectAttempts}) in ${(delay / 1000).toFixed(1)}s...`
+      );
+    }
+
+    if (this.reconnectTimeoutId) {
+      clearTimeout(this.reconnectTimeoutId);
+    }
+
+    this.reconnectTimeoutId = setTimeout(async () => {
+      await this.executeReconnectAttempt();
+    }, delay);
+  }
+
+  /**
+   * Attempts to re-establish the connection to the last known ESP32 device
+   */
+  private async executeReconnectAttempt(): Promise<boolean> {
+    if (this.userRequestedDisconnect || !this.autoReconnect) {
+      this.isReconnecting = false;
+      return false;
+    }
+
+    let target = this.lastDevice || this.device;
+
+    // If target device object is missing, try modern navigator.bluetooth.getDevices()
+    if (!target && typeof navigator !== 'undefined' && 'bluetooth' in navigator) {
+      try {
+        const bt = navigator.bluetooth as any;
+        if (typeof bt.getDevices === 'function') {
+          const permitted = await bt.getDevices();
+          if (permitted && permitted.length > 0) {
+            target = permitted.find((d: any) =>
+              d.name?.startsWith('SMCE') || d.name?.startsWith('ESP32')
+            ) || permitted[0];
+          }
+        }
+      } catch {
+        // Ignored if getDevices is not permitted
+      }
+    }
+
+    if (!target) {
+      console.warn('Cannot auto-reconnect: No prior Bluetooth device reference found.');
+      this.isReconnecting = false;
+      this.currentReconnectAttempt = 0;
+      if (this.onStatusChangeCallback) {
+        this.onStatusChangeCallback('DISCONNECTED', 'No prior ESP32 device remembered. Please click Pair Real ESP32.');
+      }
+      return false;
+    }
+
+    try {
+      console.info(`Attempting auto-reconnect to ${target.name || 'ESP32'} (${this.currentReconnectAttempt}/${this.maxReconnectAttempts})...`);
+      const success = await this.setupGattConnection(target);
+      if (success) {
+        console.info('Auto-reconnect successful!');
+        return true;
+      }
+    } catch (err: any) {
+      console.warn(`Auto-reconnect attempt ${this.currentReconnectAttempt} failed:`, err?.message || err);
+      // Try next attempt
+      this.startAutoReconnect();
+      return false;
+    }
+
+    return false;
+  }
+
+  public async retryReconnectNow(): Promise<boolean> {
+    if (this.reconnectTimeoutId) {
+      clearTimeout(this.reconnectTimeoutId);
+      this.reconnectTimeoutId = null;
+    }
+    return await this.executeReconnectAttempt();
+  }
+
   public async disconnect(): Promise<void> {
+    this.userRequestedDisconnect = true;
+    this.cancelReconnect();
+
     if (this.simTimer) {
       clearInterval(this.simTimer);
       this.simTimer = null;
@@ -286,7 +498,11 @@ export class BluetoothManager {
 
   public getConnectedDeviceName(): string {
     if (this.simulatedMode) return 'SMCE_LADAKH_ESP32 (Simulated Link)';
-    return this.device?.name || 'ESP32-SMCE';
+    return this.device?.name || this.lastDeviceName || 'ESP32-SMCE';
+  }
+
+  public getLastDeviceName(): string {
+    return this.lastDeviceName;
   }
 
   public isSimulated(): boolean {
@@ -331,8 +547,15 @@ export class BluetoothManager {
       this.simTimer = null;
     }
     this.simulatedMode = false;
-    if (this.onStatusChangeCallback) {
-      this.onStatusChangeCallback('DISCONNECTED');
+
+    // Check if auto-reconnect should trigger
+    if (!this.userRequestedDisconnect && this.autoReconnect && (this.lastDevice || this.device)) {
+      console.info('GATT connection disconnected unexpectedly. Starting auto-reconnect...');
+      this.startAutoReconnect();
+    } else {
+      if (this.onStatusChangeCallback) {
+        this.onStatusChangeCallback('DISCONNECTED');
+      }
     }
   }
 

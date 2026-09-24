@@ -264,6 +264,8 @@ export default function App() {
           setBleDeviceName(undefined);
           // Resume simulated stream when hardware is disconnected
           setSimState((prev) => ({ ...prev, enabled: true }));
+        } else if (status === 'RECONNECTING') {
+          setBleDeviceName(bleManager.getLastDeviceName() || 'ESP32 (Reconnecting)');
         }
       }
     );

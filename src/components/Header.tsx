@@ -148,6 +148,8 @@ export const Header: React.FC<HeaderProps> = ({
             className={`px-3 py-1.5 rounded-lg border text-xs font-mono font-bold transition-all flex items-center gap-1.5 shadow-sm ${
               bleStatus === 'CONNECTED'
                 ? 'bg-blue-950/90 border-blue-500 text-blue-300 shadow-blue-950/50 ring-1 ring-blue-400'
+                : bleStatus === 'RECONNECTING'
+                ? 'bg-amber-950/90 border-amber-500 text-amber-300 animate-pulse ring-1 ring-amber-400'
                 : bleStatus === 'CONNECTING'
                 ? 'bg-amber-950/80 border-amber-500 text-amber-300 animate-pulse'
                 : 'bg-slate-900 border-slate-700 text-slate-300 hover:text-white hover:border-blue-500/60'
@@ -159,6 +161,12 @@ export const Header: React.FC<HeaderProps> = ({
                 <BluetoothConnected className="w-3.5 h-3.5 text-blue-400" />
                 <span className="hidden sm:inline">ESP32:</span>
                 <span className="text-emerald-400">BLE ON</span>
+              </>
+            ) : bleStatus === 'RECONNECTING' ? (
+              <>
+                <Bluetooth className="w-3.5 h-3.5 text-amber-400 animate-spin" />
+                <span className="hidden sm:inline">ESP32:</span>
+                <span className="text-amber-300">Reconnecting...</span>
               </>
             ) : bleStatus === 'CONNECTING' ? (
               <>
