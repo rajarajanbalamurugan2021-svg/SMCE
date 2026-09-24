@@ -1,0 +1,6 @@
+{
+  "name": "SMCE – High-Altitude Equipment Protection System",
+  "description": "Smart Monitoring & Control Equipment (SMCE) real-time dashboard for extreme high-altitude equipment protection and environmental monitoring in Ladakh.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
