@@ -22,15 +22,37 @@ export const DEFAULT_THRESHOLDS: ThresholdSettings = {
   altitudeMeters: 4580,
 };
 
+function cleanNumber(val: any, fallback: number): number {
+  if (val === null || val === undefined || val === '') return fallback;
+  const num = typeof val === 'number' ? val : parseFloat(val);
+  return isNaN(num) || !isFinite(num) ? fallback : num;
+}
+
 export function loadThresholdSettings(): ThresholdSettings {
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      return { ...DEFAULT_THRESHOLDS, ...parsed };
+      return {
+        minEquipmentTemp: cleanNumber(parsed.minEquipmentTemp, DEFAULT_THRESHOLDS.minEquipmentTemp),
+        maxEquipmentTemp: cleanNumber(parsed.maxEquipmentTemp, DEFAULT_THRESHOLDS.maxEquipmentTemp),
+        minBatteryTemp: cleanNumber(parsed.minBatteryTemp, DEFAULT_THRESHOLDS.minBatteryTemp),
+        maxBatteryTemp: cleanNumber(parsed.maxBatteryTemp, DEFAULT_THRESHOLDS.maxBatteryTemp),
+        maxHumidity: cleanNumber(parsed.maxHumidity, DEFAULT_THRESHOLDS.maxHumidity),
+        minPressure: cleanNumber(parsed.minPressure, DEFAULT_THRESHOLDS.minPressure),
+        maxPressure: cleanNumber(parsed.maxPressure, DEFAULT_THRESHOLDS.maxPressure),
+        minBatteryVoltage: cleanNumber(parsed.minBatteryVoltage, DEFAULT_THRESHOLDS.minBatteryVoltage),
+        maxBatteryVoltage: cleanNumber(parsed.maxBatteryVoltage, DEFAULT_THRESHOLDS.maxBatteryVoltage),
+        maxCurrent: cleanNumber(parsed.maxCurrent, DEFAULT_THRESHOLDS.maxCurrent),
+        heaterAutoThreshold: cleanNumber(parsed.heaterAutoThreshold, DEFAULT_THRESHOLDS.heaterAutoThreshold),
+        heaterHysteresis: cleanNumber(parsed.heaterHysteresis, DEFAULT_THRESHOLDS.heaterHysteresis),
+        soundAlertsEnabled: Boolean(parsed.soundAlertsEnabled),
+        stationName: typeof parsed.stationName === 'string' && parsed.stationName ? parsed.stationName : DEFAULT_THRESHOLDS.stationName,
+        altitudeMeters: cleanNumber(parsed.altitudeMeters, DEFAULT_THRESHOLDS.altitudeMeters),
+      };
     }
   } catch (e) {
-    console.error('Failed to load settings from localStorage', e);
+    console.warn('Failed to load settings from localStorage', e);
   }
   return { ...DEFAULT_THRESHOLDS };
 }

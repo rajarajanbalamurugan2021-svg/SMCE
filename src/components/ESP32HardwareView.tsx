@@ -27,6 +27,7 @@ interface ESP32HardwareViewProps {
   deviceName?: string;
   onConnect: () => void;
   onDisconnect: () => void;
+  onConnectSimulated?: () => void;
   lastPacket?: any;
   onSendHeaterCommand: (cmd: 'HEATER_ON' | 'HEATER_OFF' | 'HEATER_AUTO') => void;
 }
@@ -37,6 +38,7 @@ export const ESP32HardwareView: React.FC<ESP32HardwareViewProps> = ({
   deviceName,
   onConnect,
   onDisconnect,
+  onConnectSimulated,
   lastPacket,
   onSendHeaterCommand,
 }) => {
@@ -93,7 +95,7 @@ export const ESP32HardwareView: React.FC<ESP32HardwareViewProps> = ({
         </div>
 
         {/* Big Connection Action */}
-        <div className="shrink-0 flex items-center gap-3">
+        <div className="shrink-0 flex flex-wrap items-center gap-3">
           {status === 'CONNECTED' ? (
             <button
               onClick={onDisconnect}
@@ -103,14 +105,26 @@ export const ESP32HardwareView: React.FC<ESP32HardwareViewProps> = ({
               Disconnect ESP32
             </button>
           ) : (
-            <button
-              onClick={onConnect}
-              disabled={status === 'CONNECTING'}
-              className="px-6 py-3 rounded-xl font-mono text-sm font-bold bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-600/30 transition-all flex items-center gap-2.5 disabled:opacity-50"
-            >
-              <Bluetooth className="w-5 h-5" />
-              {status === 'CONNECTING' ? 'Pairing ESP32...' : 'Pair & Connect ESP32'}
-            </button>
+            <>
+              <button
+                onClick={onConnect}
+                disabled={status === 'CONNECTING'}
+                className="px-5 py-2.5 rounded-xl font-mono text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-600/30 transition-all flex items-center gap-2 disabled:opacity-50"
+              >
+                <Bluetooth className="w-4 h-4" />
+                {status === 'CONNECTING' ? 'Pairing ESP32...' : 'Pair Real ESP32'}
+              </button>
+
+              {onConnectSimulated && (
+                <button
+                  onClick={onConnectSimulated}
+                  className="px-4 py-2.5 rounded-xl font-mono text-xs font-bold bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-cyan-500/30 transition-all flex items-center gap-2"
+                >
+                  <Cpu className="w-4 h-4 text-cyan-400" />
+                  Virtual ESP32 Link
+                </button>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -208,12 +222,27 @@ export const ESP32HardwareView: React.FC<ESP32HardwareViewProps> = ({
 
           {/* Error notice */}
           {errorMessage && (
-            <div className="p-4 rounded-xl bg-rose-950/40 border border-rose-500/50 text-rose-300 text-xs font-mono flex items-start gap-2.5">
-              <AlertCircle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
-              <div>
-                <strong className="block text-rose-200">Bluetooth Operation Notice:</strong>
-                {errorMessage}
+            <div className="p-4 rounded-xl bg-rose-950/40 border border-rose-500/50 text-rose-300 text-xs font-mono space-y-2">
+              <div className="flex items-start gap-2.5">
+                <AlertCircle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+                <div>
+                  <strong className="block text-rose-200">Bluetooth Operation Notice:</strong>
+                  {errorMessage}
+                </div>
               </div>
+              {errorMessage.toLowerCase().includes('permissions policy') && onConnectSimulated && (
+                <div className="pt-2 border-t border-rose-900/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <span className="text-slate-300 text-[11px]">
+                    Note: Embedded iframes restrict native Web Bluetooth device popups. Click below to launch the ESP32 hardware protocol streamer:
+                  </span>
+                  <button
+                    onClick={onConnectSimulated}
+                    className="px-3.5 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs transition-all shrink-0"
+                  >
+                    Activate Virtual ESP32 Hardware Stream
+                  </button>
+                </div>
+              )}
             </div>
           )}
 

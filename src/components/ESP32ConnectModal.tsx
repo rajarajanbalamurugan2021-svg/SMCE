@@ -26,6 +26,7 @@ interface ESP32ConnectModalProps {
   deviceName?: string;
   onConnect: () => void;
   onDisconnect: () => void;
+  onConnectSimulated?: () => void;
   lastPacket?: any;
 }
 
@@ -37,6 +38,7 @@ export const ESP32ConnectModal: React.FC<ESP32ConnectModalProps> = ({
   deviceName,
   onConnect,
   onDisconnect,
+  onConnectSimulated,
   lastPacket,
 }) => {
   const [activeTab, setActiveTab] = useState<'connect' | 'code' | 'wiring'>('connect');
@@ -186,7 +188,7 @@ export const ESP32ConnectModal: React.FC<ESP32ConnectModalProps> = ({
                 </div>
 
                 {/* Connect / Disconnect Buttons */}
-                <div>
+                <div className="flex flex-wrap items-center gap-2">
                   {status === 'CONNECTED' ? (
                     <button
                       onClick={onDisconnect}
@@ -196,23 +198,55 @@ export const ESP32ConnectModal: React.FC<ESP32ConnectModalProps> = ({
                       Disconnect ESP32
                     </button>
                   ) : (
-                    <button
-                      onClick={onConnect}
-                      disabled={status === 'CONNECTING'}
-                      className="px-5 py-2.5 rounded-lg text-xs font-mono font-bold bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-600/30 transition-all flex items-center gap-2 disabled:opacity-50"
-                    >
-                      <Bluetooth className="w-4 h-4" />
-                      {status === 'CONNECTING' ? 'Pairing ESP32...' : 'Pair & Connect ESP32'}
-                    </button>
+                    <>
+                      <button
+                        onClick={onConnect}
+                        disabled={status === 'CONNECTING'}
+                        className="px-4 py-2 rounded-lg text-xs font-mono font-bold bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-600/30 transition-all flex items-center gap-2 disabled:opacity-50"
+                        title="Search for physical ESP32 via browser Web Bluetooth"
+                      >
+                        <Bluetooth className="w-4 h-4" />
+                        {status === 'CONNECTING' ? 'Pairing ESP32...' : 'Pair & Connect ESP32'}
+                      </button>
+
+                      {onConnectSimulated && (
+                        <button
+                          onClick={onConnectSimulated}
+                          className="px-3.5 py-2 rounded-lg text-xs font-mono font-bold bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-cyan-500/30 transition-all flex items-center gap-1.5"
+                          title="Simulates live ESP32 serial packet protocol when in an iframe or testing without hardware"
+                        >
+                          <Cpu className="w-3.5 h-3.5 text-cyan-400" />
+                          Virtual ESP32 Link
+                        </button>
+                      )}
+                    </>
                   )}
                 </div>
               </div>
 
               {/* Error Alert */}
               {errorMessage && (
-                <div className="p-3 rounded-lg bg-rose-950/40 border border-rose-500/50 text-rose-300 text-xs font-mono flex items-start gap-2">
-                  <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
-                  <div>{errorMessage}</div>
+                <div className="p-4 rounded-xl bg-rose-950/40 border border-rose-500/50 text-rose-200 text-xs font-mono space-y-2">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold text-rose-300">Connection Notice: </span>
+                      {errorMessage}
+                    </div>
+                  </div>
+                  {errorMessage.toLowerCase().includes('permissions policy') && onConnectSimulated && (
+                    <div className="pt-2 border-t border-rose-900/50 flex items-center justify-between gap-2">
+                      <span className="text-slate-300 text-[11px]">
+                        💡 Preview iframes block browser Web Bluetooth. You can run full live ESP32 telemetry with the Virtual Hardware Link:
+                      </span>
+                      <button
+                        onClick={onConnectSimulated}
+                        className="shrink-0 px-3 py-1 rounded bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-[11px] transition-all"
+                      >
+                        Start Virtual ESP32 Stream
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
 

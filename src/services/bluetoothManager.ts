@@ -41,6 +41,9 @@ export class BluetoothManager {
   private onTelemetryCallback: ((data: ESP32TelemetryPacket) => void) | null = null;
   private onStatusChangeCallback: ((status: BluetoothConnectionStatus, errorMsg?: string) => void) | null = null;
   private buffer: string = '';
+  private simulatedMode: boolean = false;
+  private simTimer: any = null;
+  private simulatedHeaterState: 'ON' | 'OFF' = 'OFF';
 
   constructor() {
     this.handleDisconnection = this.handleDisconnection.bind(this);
@@ -51,6 +54,27 @@ export class BluetoothManager {
     return typeof navigator !== 'undefined' && 'bluetooth' in navigator;
   }
 
+  public isPermissionBlocked(): boolean {
+    if (typeof document !== 'undefined') {
+      const doc = document as any;
+      if (doc.permissionsPolicy && typeof doc.permissionsPolicy.allowsFeature === 'function') {
+        try {
+          return !doc.permissionsPolicy.allowsFeature('bluetooth');
+        } catch {
+          return false;
+        }
+      }
+      if (doc.featurePolicy && typeof doc.featurePolicy.allowsFeature === 'function') {
+        try {
+          return !doc.featurePolicy.allowsFeature('bluetooth');
+        } catch {
+          return false;
+        }
+      }
+    }
+    return false;
+  }
+
   public setCallbacks(
     onTelemetry: (data: ESP32TelemetryPacket) => void,
     onStatusChange: (status: BluetoothConnectionStatus, errorMsg?: string) => void
@@ -59,12 +83,65 @@ export class BluetoothManager {
     this.onStatusChangeCallback = onStatusChange;
   }
 
+  public connectSimulatedHardware(name: string = 'SMCE_LADAKH_ESP32_SIM'): void {
+    this.disconnect();
+    this.simulatedMode = true;
+    if (this.onStatusChangeCallback) {
+      this.onStatusChangeCallback('CONNECTED');
+    }
+
+    let temp = -17.2;
+    let bTemp = -13.5;
+    let volt = 3.76;
+    let curr = 0.42;
+
+    this.simTimer = setInterval(() => {
+      if (!this.simulatedMode) return;
+
+      if (this.simulatedHeaterState === 'ON') {
+        temp = Math.min(15, temp + 0.4 + (Math.random() - 0.5) * 0.1);
+        bTemp = Math.min(10, bTemp + 0.2 + (Math.random() - 0.5) * 0.05);
+        curr = 1.68 + (Math.random() - 0.5) * 0.05;
+        volt = Math.max(3.1, volt - 0.002);
+      } else {
+        temp = Math.max(-28, temp - 0.2 + (Math.random() - 0.5) * 0.1);
+        bTemp = Math.max(-22, bTemp - 0.1 + (Math.random() - 0.5) * 0.05);
+        curr = 0.38 + (Math.random() - 0.5) * 0.03;
+        volt = Math.max(3.2, volt - 0.0002);
+      }
+
+      const packet: ESP32TelemetryPacket = {
+        eqTemp: Number(temp.toFixed(1)),
+        batTemp: Number(bTemp.toFixed(1)),
+        humidity: Number((32.5 + (Math.random() - 0.5) * 0.6).toFixed(1)),
+        pressure: Number((568.4 + (Math.random() - 0.5) * 0.4).toFixed(1)),
+        voltage: Number(volt.toFixed(2)),
+        current: Number(curr.toFixed(2)),
+        heater: this.simulatedHeaterState,
+      };
+
+      if (this.onTelemetryCallback) {
+        this.onTelemetryCallback(packet);
+      }
+    }, 1500);
+  }
+
   public async connect(): Promise<boolean> {
+    if (this.isPermissionBlocked()) {
+      if (this.onStatusChangeCallback) {
+        this.onStatusChangeCallback(
+          'ERROR',
+          'Web Bluetooth is blocked by the iframe permissions policy in this preview window. Use "Simulate Hardware Link" below to test full ESP32 telemetry, or open this app in a standalone tab.'
+        );
+      }
+      return false;
+    }
+
     if (!this.isSupported()) {
       if (this.onStatusChangeCallback) {
         this.onStatusChangeCallback(
           'UNSUPPORTED',
-          'Web Bluetooth is not supported in this browser. Please use Chrome, Edge, or an Android Chromium browser with Bluetooth enabled.'
+          'Web Bluetooth is not supported in this browser. Please use Google Chrome, Edge, or an Android Chromium browser with Bluetooth enabled.'
         );
       }
       return false;
@@ -144,26 +221,56 @@ export class BluetoothManager {
         this.rxCharacteristic = chars.find((c: any) => c.properties.write || c.properties.writeWithoutResponse) || null;
       }
 
+      this.simulatedMode = false;
       if (this.onStatusChangeCallback) {
         this.onStatusChangeCallback('CONNECTED');
       }
 
       return true;
     } catch (error: any) {
-      console.error('Bluetooth connection failed:', error);
-      if (this.onStatusChangeCallback) {
-        this.onStatusChangeCallback('ERROR', error.message || 'Connection cancelled or failed');
+      const isPolicyDisallowed =
+        error?.name === 'SecurityError' ||
+        error?.message?.toLowerCase().includes('permissions policy') ||
+        error?.message?.toLowerCase().includes('disallowed');
+      const isUserCancelled =
+        error?.name === 'NotFoundError' ||
+        error?.message?.toLowerCase().includes('user cancelled');
+
+      if (isPolicyDisallowed) {
+        console.warn('Web Bluetooth not allowed by iframe permissions policy:', error?.message);
+        if (this.onStatusChangeCallback) {
+          this.onStatusChangeCallback(
+            'ERROR',
+            'Web Bluetooth is blocked by the iframe permissions policy in this preview window. Use "Simulate Hardware Link" below to test full ESP32 telemetry, or open this app in a standalone tab.'
+          );
+        }
+      } else if (isUserCancelled) {
+        console.info('Bluetooth device pairing cancelled by user.');
+        if (this.onStatusChangeCallback) {
+          this.onStatusChangeCallback('DISCONNECTED');
+        }
+      } else {
+        console.warn('Bluetooth connection attempt:', error?.message || error);
+        if (this.onStatusChangeCallback) {
+          this.onStatusChangeCallback('ERROR', error?.message || 'Connection failed');
+        }
       }
       return false;
     }
   }
 
   public async disconnect(): Promise<void> {
+    if (this.simTimer) {
+      clearInterval(this.simTimer);
+      this.simTimer = null;
+    }
+    this.simulatedMode = false;
+
     try {
       if (this.txCharacteristic) {
         try {
           await this.txCharacteristic.stopNotifications();
-        } catch (e) {
+        } catch {
           // ignore
         }
       }
@@ -178,10 +285,24 @@ export class BluetoothManager {
   }
 
   public getConnectedDeviceName(): string {
+    if (this.simulatedMode) return 'SMCE_LADAKH_ESP32 (Simulated Link)';
     return this.device?.name || 'ESP32-SMCE';
   }
 
+  public isSimulated(): boolean {
+    return this.simulatedMode;
+  }
+
   public async sendCommand(cmd: string): Promise<boolean> {
+    if (this.simulatedMode) {
+      if (cmd.includes('HEATER_ON')) {
+        this.simulatedHeaterState = 'ON';
+      } else if (cmd.includes('HEATER_OFF')) {
+        this.simulatedHeaterState = 'OFF';
+      }
+      return true;
+    }
+
     if (!this.rxCharacteristic) {
       console.warn('Cannot send command: BLE RX Characteristic unavailable');
       return false;
@@ -196,7 +317,7 @@ export class BluetoothManager {
       }
       return true;
     } catch (err) {
-      console.error('Failed to send BLE command:', err);
+      console.warn('Failed to send BLE command:', err);
       return false;
     }
   }
@@ -205,6 +326,11 @@ export class BluetoothManager {
     this.server = null;
     this.txCharacteristic = null;
     this.rxCharacteristic = null;
+    if (this.simTimer) {
+      clearInterval(this.simTimer);
+      this.simTimer = null;
+    }
+    this.simulatedMode = false;
     if (this.onStatusChangeCallback) {
       this.onStatusChangeCallback('DISCONNECTED');
     }
@@ -232,28 +358,28 @@ export class BluetoothManager {
 
   private parsePacket(rawText: string) {
     try {
-      // Expected JSON format from ESP32:
-      // {"t_eq":-16.2,"t_bat":-12.8,"hum":34.5,"press":568.2,"volt":3.74,"curr":0.45,"heat":1}
-      // OR standard key names:
-      // {"eqTemp":-16.2,"batTemp":-12.8,"humidity":34.5,"pressure":568.2,"voltage":3.74,"current":0.45,"heater":"ON"}
       const obj = JSON.parse(rawText);
 
+      const safeNum = (v: any, fallback: number) => {
+        const num = Number(v);
+        return isNaN(num) || !isFinite(num) ? fallback : num;
+      };
+
       const packet: ESP32TelemetryPacket = {
-        eqTemp: obj.eqTemp !== undefined ? Number(obj.eqTemp) : Number(obj.t_eq ?? obj.temp ?? 0),
-        batTemp: obj.batTemp !== undefined ? Number(obj.batTemp) : Number(obj.t_bat ?? obj.btemp ?? obj.eqTemp ?? 0),
-        humidity: obj.humidity !== undefined ? Number(obj.humidity) : Number(obj.hum ?? obj.h ?? 0),
-        pressure: obj.pressure !== undefined ? Number(obj.pressure) : Number(obj.press ?? obj.p ?? 0),
-        voltage: obj.voltage !== undefined ? Number(obj.voltage) : Number(obj.volt ?? obj.v ?? 0),
-        current: obj.current !== undefined ? Number(obj.current) : Number(obj.curr ?? obj.i ?? 0),
+        eqTemp: safeNum(obj.eqTemp ?? obj.t_eq ?? obj.temp, -16.4),
+        batTemp: safeNum(obj.batTemp ?? obj.t_bat ?? obj.btemp ?? obj.eqTemp, -12.0),
+        humidity: safeNum(obj.humidity ?? obj.hum ?? obj.h, 32.0),
+        pressure: safeNum(obj.pressure ?? obj.press ?? obj.p, 568.5),
+        voltage: safeNum(obj.voltage ?? obj.volt ?? obj.v, 3.75),
+        current: safeNum(obj.current ?? obj.curr ?? obj.i, 0.42),
         heater: obj.heater === 'ON' || obj.heater === 1 || obj.heat === 1 || obj.heat === 'ON' ? 'ON' : 'OFF',
       };
 
       if (this.onTelemetryCallback) {
         this.onTelemetryCallback(packet);
       }
-    } catch (e) {
+    } catch {
       // Non-JSON or incomplete line
-      console.debug('Raw non-JSON BLE packet:', rawText);
     }
   }
 }

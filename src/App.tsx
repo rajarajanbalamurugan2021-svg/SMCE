@@ -494,6 +494,10 @@ export default function App() {
     await bleManager.connect();
   };
 
+  const handleConnectSimulatedBle = () => {
+    bleManager.connectSimulatedHardware();
+  };
+
   const handleDisconnectBle = async () => {
     await bleManager.disconnect();
   };
@@ -720,6 +724,7 @@ export default function App() {
               deviceName={bleDeviceName}
               onConnect={handleConnectBle}
               onDisconnect={handleDisconnectBle}
+              onConnectSimulated={handleConnectSimulatedBle}
               lastPacket={lastBlePacket}
               onSendHeaterCommand={handleSendHeaterBleCommand}
             />
@@ -753,6 +758,7 @@ export default function App() {
         deviceName={bleDeviceName}
         onConnect={handleConnectBle}
         onDisconnect={handleDisconnectBle}
+        onConnectSimulated={handleConnectSimulatedBle}
         lastPacket={lastBlePacket}
       />
     </div>

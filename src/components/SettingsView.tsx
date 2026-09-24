@@ -22,6 +22,12 @@ interface SettingsViewProps {
   onSaveSettings: (settings: ThresholdSettings) => void;
 }
 
+function cleanFormNumber(val: any, fallback: number): number {
+  if (val === '' || val === null || val === undefined) return fallback;
+  const num = typeof val === 'number' ? val : parseFloat(val);
+  return isNaN(num) || !isFinite(num) ? fallback : num;
+}
+
 export const SettingsView: React.FC<SettingsViewProps> = ({
   settings,
   onSaveSettings,
@@ -29,14 +35,55 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [form, setForm] = useState<ThresholdSettings>({ ...settings });
   const [savedSuccess, setSavedSuccess] = useState(false);
 
-  const handleChange = (key: keyof ThresholdSettings, val: any) => {
+  // Sync if parent settings change
+  React.useEffect(() => {
+    setForm({ ...settings });
+  }, [settings]);
+
+  const handleNumberChange = (key: keyof ThresholdSettings, rawValue: string, fallback: number) => {
+    setSavedSuccess(false);
+    if (rawValue === '' || rawValue === '-') {
+      setForm((prev) => ({ ...prev, [key]: rawValue as any }));
+    } else {
+      const parsed = parseFloat(rawValue);
+      setForm((prev) => ({ ...prev, [key]: isNaN(parsed) ? fallback : parsed }));
+    }
+  };
+
+  const handleTextChange = (key: keyof ThresholdSettings, val: any) => {
     setForm((prev) => ({ ...prev, [key]: val }));
     setSavedSuccess(false);
   };
 
+  const formatInputValue = (val: any, fallback: number = 0): string | number => {
+    if (val === '' || val === '-') return val;
+    if (val === null || val === undefined) return fallback;
+    const num = Number(val);
+    if (isNaN(num)) return fallback;
+    return val;
+  };
+
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
-    onSaveSettings(form);
+    const sanitized: ThresholdSettings = {
+      ...form,
+      minEquipmentTemp: cleanFormNumber(form.minEquipmentTemp, DEFAULT_THRESHOLDS.minEquipmentTemp),
+      maxEquipmentTemp: cleanFormNumber(form.maxEquipmentTemp, DEFAULT_THRESHOLDS.maxEquipmentTemp),
+      minBatteryTemp: cleanFormNumber(form.minBatteryTemp, DEFAULT_THRESHOLDS.minBatteryTemp),
+      maxBatteryTemp: cleanFormNumber(form.maxBatteryTemp, DEFAULT_THRESHOLDS.maxBatteryTemp),
+      maxHumidity: cleanFormNumber(form.maxHumidity, DEFAULT_THRESHOLDS.maxHumidity),
+      minPressure: cleanFormNumber(form.minPressure, DEFAULT_THRESHOLDS.minPressure),
+      maxPressure: cleanFormNumber(form.maxPressure, DEFAULT_THRESHOLDS.maxPressure),
+      minBatteryVoltage: cleanFormNumber(form.minBatteryVoltage, DEFAULT_THRESHOLDS.minBatteryVoltage),
+      maxBatteryVoltage: cleanFormNumber(form.maxBatteryVoltage, DEFAULT_THRESHOLDS.maxBatteryVoltage),
+      maxCurrent: cleanFormNumber(form.maxCurrent, DEFAULT_THRESHOLDS.maxCurrent),
+      heaterAutoThreshold: cleanFormNumber(form.heaterAutoThreshold, DEFAULT_THRESHOLDS.heaterAutoThreshold),
+      heaterHysteresis: cleanFormNumber(form.heaterHysteresis, DEFAULT_THRESHOLDS.heaterHysteresis),
+      altitudeMeters: cleanFormNumber(form.altitudeMeters, DEFAULT_THRESHOLDS.altitudeMeters),
+      stationName: typeof form.stationName === 'string' && form.stationName ? form.stationName : DEFAULT_THRESHOLDS.stationName,
+    };
+    setForm(sanitized);
+    onSaveSettings(sanitized);
     setSavedSuccess(true);
     setTimeout(() => setSavedSuccess(false), 3000);
   };
@@ -49,6 +96,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       setTimeout(() => setSavedSuccess(false), 3000);
     }
   };
+
+  const hysteresisCutoff = (
+    cleanFormNumber(form.heaterAutoThreshold, DEFAULT_THRESHOLDS.heaterAutoThreshold) +
+    cleanFormNumber(form.heaterHysteresis, DEFAULT_THRESHOLDS.heaterHysteresis)
+  ).toFixed(1);
 
   return (
     <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-5 md:p-6 shadow-xl space-y-6">
@@ -114,8 +166,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <input
                 type="number"
                 step="0.5"
-                value={form.minEquipmentTemp}
-                onChange={(e) => handleChange('minEquipmentTemp', parseFloat(e.target.value))}
+                value={formatInputValue(form.minEquipmentTemp, DEFAULT_THRESHOLDS.minEquipmentTemp)}
+                onChange={(e) => handleNumberChange('minEquipmentTemp', e.target.value, DEFAULT_THRESHOLDS.minEquipmentTemp)}
                 className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm font-mono text-white focus:outline-none focus:border-cyan-500"
               />
               <span className="text-[10px] text-slate-500 mt-1 block font-mono">
@@ -130,8 +182,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <input
                 type="number"
                 step="0.5"
-                value={form.maxEquipmentTemp}
-                onChange={(e) => handleChange('maxEquipmentTemp', parseFloat(e.target.value))}
+                value={formatInputValue(form.maxEquipmentTemp, DEFAULT_THRESHOLDS.maxEquipmentTemp)}
+                onChange={(e) => handleNumberChange('maxEquipmentTemp', e.target.value, DEFAULT_THRESHOLDS.maxEquipmentTemp)}
                 className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm font-mono text-white focus:outline-none focus:border-cyan-500"
               />
               <span className="text-[10px] text-slate-500 mt-1 block font-mono">
@@ -146,8 +198,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <input
                 type="number"
                 step="0.5"
-                value={form.heaterAutoThreshold}
-                onChange={(e) => handleChange('heaterAutoThreshold', parseFloat(e.target.value))}
+                value={formatInputValue(form.heaterAutoThreshold, DEFAULT_THRESHOLDS.heaterAutoThreshold)}
+                onChange={(e) => handleNumberChange('heaterAutoThreshold', e.target.value, DEFAULT_THRESHOLDS.heaterAutoThreshold)}
                 className="w-full bg-slate-900 border border-cyan-500/50 rounded-lg px-3 py-2 text-sm font-mono text-cyan-300 font-bold focus:outline-none focus:border-cyan-400"
               />
               <span className="text-[10px] text-cyan-400/80 mt-1 block font-mono">
@@ -162,12 +214,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <input
                 type="number"
                 step="0.5"
-                value={form.heaterHysteresis}
-                onChange={(e) => handleChange('heaterHysteresis', parseFloat(e.target.value))}
+                value={formatInputValue(form.heaterHysteresis, DEFAULT_THRESHOLDS.heaterHysteresis)}
+                onChange={(e) => handleNumberChange('heaterHysteresis', e.target.value, DEFAULT_THRESHOLDS.heaterHysteresis)}
                 className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm font-mono text-white focus:outline-none focus:border-cyan-500"
               />
               <span className="text-[10px] text-slate-500 mt-1 block font-mono">
-                Off-band delta: shuts off at {(form.heaterAutoThreshold + form.heaterHysteresis).toFixed(1)}°C
+                Off-band delta: shuts off at {hysteresisCutoff}°C
               </span>
             </div>
           </div>
@@ -188,8 +240,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <input
                 type="number"
                 step="0.05"
-                value={form.minBatteryVoltage}
-                onChange={(e) => handleChange('minBatteryVoltage', parseFloat(e.target.value))}
+                value={formatInputValue(form.minBatteryVoltage, DEFAULT_THRESHOLDS.minBatteryVoltage)}
+                onChange={(e) => handleNumberChange('minBatteryVoltage', e.target.value, DEFAULT_THRESHOLDS.minBatteryVoltage)}
                 className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm font-mono text-white focus:outline-none focus:border-cyan-500"
               />
               <span className="text-[10px] text-slate-500 mt-1 block font-mono">
@@ -204,8 +256,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <input
                 type="number"
                 step="0.1"
-                value={form.maxCurrent}
-                onChange={(e) => handleChange('maxCurrent', parseFloat(e.target.value))}
+                value={formatInputValue(form.maxCurrent, DEFAULT_THRESHOLDS.maxCurrent)}
+                onChange={(e) => handleNumberChange('maxCurrent', e.target.value, DEFAULT_THRESHOLDS.maxCurrent)}
                 className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm font-mono text-white focus:outline-none focus:border-cyan-500"
               />
               <span className="text-[10px] text-slate-500 mt-1 block font-mono">
@@ -220,8 +272,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <input
                 type="number"
                 step="0.5"
-                value={form.minBatteryTemp}
-                onChange={(e) => handleChange('minBatteryTemp', parseFloat(e.target.value))}
+                value={formatInputValue(form.minBatteryTemp, DEFAULT_THRESHOLDS.minBatteryTemp)}
+                onChange={(e) => handleNumberChange('minBatteryTemp', e.target.value, DEFAULT_THRESHOLDS.minBatteryTemp)}
                 className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm font-mono text-white focus:outline-none focus:border-cyan-500"
               />
               <span className="text-[10px] text-slate-500 mt-1 block font-mono">
@@ -246,8 +298,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <input
                 type="number"
                 step="1"
-                value={form.maxHumidity}
-                onChange={(e) => handleChange('maxHumidity', parseFloat(e.target.value))}
+                value={formatInputValue(form.maxHumidity, DEFAULT_THRESHOLDS.maxHumidity)}
+                onChange={(e) => handleNumberChange('maxHumidity', e.target.value, DEFAULT_THRESHOLDS.maxHumidity)}
                 className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm font-mono text-white focus:outline-none focus:border-cyan-500"
               />
               <span className="text-[10px] text-slate-500 mt-1 block font-mono">
@@ -262,8 +314,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <input
                 type="number"
                 step="5"
-                value={form.minPressure}
-                onChange={(e) => handleChange('minPressure', parseFloat(e.target.value))}
+                value={formatInputValue(form.minPressure, DEFAULT_THRESHOLDS.minPressure)}
+                onChange={(e) => handleNumberChange('minPressure', e.target.value, DEFAULT_THRESHOLDS.minPressure)}
                 className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm font-mono text-white focus:outline-none focus:border-cyan-500"
               />
               <span className="text-[10px] text-slate-500 mt-1 block font-mono">
@@ -278,8 +330,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <input
                 type="number"
                 step="5"
-                value={form.maxPressure}
-                onChange={(e) => handleChange('maxPressure', parseFloat(e.target.value))}
+                value={formatInputValue(form.maxPressure, DEFAULT_THRESHOLDS.maxPressure)}
+                onChange={(e) => handleNumberChange('maxPressure', e.target.value, DEFAULT_THRESHOLDS.maxPressure)}
                 className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm font-mono text-white focus:outline-none focus:border-cyan-500"
               />
               <span className="text-[10px] text-slate-500 mt-1 block font-mono">
@@ -303,8 +355,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               </label>
               <input
                 type="text"
-                value={form.stationName}
-                onChange={(e) => handleChange('stationName', e.target.value)}
+                value={form.stationName || ''}
+                onChange={(e) => handleTextChange('stationName', e.target.value)}
                 className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm font-mono text-white focus:outline-none focus:border-cyan-500"
               />
             </div>
@@ -316,8 +368,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <input
                 type="number"
                 step="10"
-                value={form.altitudeMeters}
-                onChange={(e) => handleChange('altitudeMeters', parseInt(e.target.value) || 0)}
+                value={formatInputValue(form.altitudeMeters, DEFAULT_THRESHOLDS.altitudeMeters)}
+                onChange={(e) => handleNumberChange('altitudeMeters', e.target.value, DEFAULT_THRESHOLDS.altitudeMeters)}
                 className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm font-mono text-white focus:outline-none focus:border-cyan-500"
               />
             </div>

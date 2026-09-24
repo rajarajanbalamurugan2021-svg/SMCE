@@ -39,6 +39,7 @@ export const SimulationControls: React.FC<SimulationControlsProps> = ({
   };
 
   const setManualValue = (key: keyof SimulationState, val: number) => {
+    if (isNaN(val) || !isFinite(val)) return;
     onUpdateSimState((prev) => ({
       ...prev,
       [key]: val,
@@ -187,8 +188,11 @@ export const SimulationControls: React.FC<SimulationControlsProps> = ({
                 min="-40"
                 max="50"
                 step="0.5"
-                value={simState.equipmentTemp}
-                onChange={(e) => setManualValue('equipmentTemp', parseFloat(e.target.value))}
+                value={isNaN(simState.equipmentTemp) ? -16.4 : simState.equipmentTemp}
+                onChange={(e) => {
+                  const v = parseFloat(e.target.value);
+                  if (!isNaN(v)) setManualValue('equipmentTemp', v);
+                }}
                 className="w-full accent-rose-500 h-1.5 bg-slate-800 rounded-lg cursor-pointer"
               />
               <div className="flex justify-between text-[10px] font-mono text-slate-500">
@@ -206,7 +210,7 @@ export const SimulationControls: React.FC<SimulationControlsProps> = ({
                   Battery Temp
                 </span>
                 <span className="font-bold text-white">
-                  {simState.batteryTemp.toFixed(1)} °C
+                  {(isNaN(simState.batteryTemp) ? -12.0 : simState.batteryTemp).toFixed(1)} °C
                 </span>
               </div>
               <input
@@ -214,8 +218,11 @@ export const SimulationControls: React.FC<SimulationControlsProps> = ({
                 min="-30"
                 max="50"
                 step="0.5"
-                value={simState.batteryTemp}
-                onChange={(e) => setManualValue('batteryTemp', parseFloat(e.target.value))}
+                value={isNaN(simState.batteryTemp) ? -12.0 : simState.batteryTemp}
+                onChange={(e) => {
+                  const v = parseFloat(e.target.value);
+                  if (!isNaN(v)) setManualValue('batteryTemp', v);
+                }}
                 className="w-full accent-sky-500 h-1.5 bg-slate-800 rounded-lg cursor-pointer"
               />
               <div className="flex justify-between text-[10px] font-mono text-slate-500">
@@ -233,7 +240,7 @@ export const SimulationControls: React.FC<SimulationControlsProps> = ({
                   Battery Voltage
                 </span>
                 <span className="font-bold text-white">
-                  {simState.batteryVoltage.toFixed(2)} V
+                  {(isNaN(simState.batteryVoltage) ? 3.75 : simState.batteryVoltage).toFixed(2)} V
                 </span>
               </div>
               <input
@@ -241,8 +248,11 @@ export const SimulationControls: React.FC<SimulationControlsProps> = ({
                 min="2.8"
                 max="4.3"
                 step="0.02"
-                value={simState.batteryVoltage}
-                onChange={(e) => setManualValue('batteryVoltage', parseFloat(e.target.value))}
+                value={isNaN(simState.batteryVoltage) ? 3.75 : simState.batteryVoltage}
+                onChange={(e) => {
+                  const v = parseFloat(e.target.value);
+                  if (!isNaN(v)) setManualValue('batteryVoltage', v);
+                }}
                 className="w-full accent-emerald-500 h-1.5 bg-slate-800 rounded-lg cursor-pointer"
               />
               <div className="flex justify-between text-[10px] font-mono text-slate-500">
@@ -260,7 +270,7 @@ export const SimulationControls: React.FC<SimulationControlsProps> = ({
                   Battery Current
                 </span>
                 <span className="font-bold text-white">
-                  {simState.batteryCurrent.toFixed(2)} A
+                  {(isNaN(simState.batteryCurrent) ? 0.42 : simState.batteryCurrent).toFixed(2)} A
                 </span>
               </div>
               <input
@@ -268,8 +278,11 @@ export const SimulationControls: React.FC<SimulationControlsProps> = ({
                 min="0.1"
                 max="4.5"
                 step="0.05"
-                value={simState.batteryCurrent}
-                onChange={(e) => setManualValue('batteryCurrent', parseFloat(e.target.value))}
+                value={isNaN(simState.batteryCurrent) ? 0.42 : simState.batteryCurrent}
+                onChange={(e) => {
+                  const v = parseFloat(e.target.value);
+                  if (!isNaN(v)) setManualValue('batteryCurrent', v);
+                }}
                 className="w-full accent-amber-500 h-1.5 bg-slate-800 rounded-lg cursor-pointer"
               />
               <div className="flex justify-between text-[10px] font-mono text-slate-500">
@@ -287,7 +300,7 @@ export const SimulationControls: React.FC<SimulationControlsProps> = ({
                   Humidity
                 </span>
                 <span className="font-bold text-white">
-                  {simState.humidity.toFixed(1)} %
+                  {(isNaN(simState.humidity) ? 32.0 : simState.humidity).toFixed(1)} %
                 </span>
               </div>
               <input
@@ -295,8 +308,11 @@ export const SimulationControls: React.FC<SimulationControlsProps> = ({
                 min="5"
                 max="100"
                 step="1"
-                value={simState.humidity}
-                onChange={(e) => setManualValue('humidity', parseFloat(e.target.value))}
+                value={isNaN(simState.humidity) ? 32.0 : simState.humidity}
+                onChange={(e) => {
+                  const v = parseFloat(e.target.value);
+                  if (!isNaN(v)) setManualValue('humidity', v);
+                }}
                 className="w-full accent-cyan-500 h-1.5 bg-slate-800 rounded-lg cursor-pointer"
               />
               <div className="flex justify-between text-[10px] font-mono text-slate-500">
@@ -314,7 +330,7 @@ export const SimulationControls: React.FC<SimulationControlsProps> = ({
                   Atmospheric Pressure
                 </span>
                 <span className="font-bold text-white">
-                  {simState.pressure.toFixed(1)} hPa
+                  {(isNaN(simState.pressure) ? 568.5 : simState.pressure).toFixed(1)} hPa
                 </span>
               </div>
               <input
@@ -322,8 +338,11 @@ export const SimulationControls: React.FC<SimulationControlsProps> = ({
                 min="400"
                 max="850"
                 step="5"
-                value={simState.pressure}
-                onChange={(e) => setManualValue('pressure', parseFloat(e.target.value))}
+                value={isNaN(simState.pressure) ? 568.5 : simState.pressure}
+                onChange={(e) => {
+                  const v = parseFloat(e.target.value);
+                  if (!isNaN(v)) setManualValue('pressure', v);
+                }}
                 className="w-full accent-purple-500 h-1.5 bg-slate-800 rounded-lg cursor-pointer"
               />
               <div className="flex justify-between text-[10px] font-mono text-slate-500">
