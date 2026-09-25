@@ -96,14 +96,14 @@ export const Header: React.FC<HeaderProps> = ({
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-xl font-extrabold tracking-wider text-white font-mono flex items-center gap-2">
-                SMCE
+                MAHAPS
                 <span className="text-xs bg-slate-800 text-cyan-400 px-2 py-0.5 rounded font-sans font-medium border border-slate-700">
-                  Smart Monitoring &amp; Control Equipment
+                  SIH 26049
                 </span>
               </h1>
             </div>
             <h2 className="text-xs text-slate-300 font-medium tracking-wide">
-              High-Altitude Equipment Protection &amp; Monitoring System
+              Modular Adaptive High-Altitude Protection System
             </h2>
           </div>
         </div>

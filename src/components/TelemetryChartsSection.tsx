@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { TelemetryChart, DataPoint } from './TelemetryChart';
 import { ThresholdSettings, SensorReading } from '../types/smce';
-import { Clock, Sliders, Maximize2, Activity } from 'lucide-react';
+import { Clock, Sliders, Maximize2, Activity, Flame } from 'lucide-react';
 
 export type TimeFilter = '1m' | '5m' | '15m' | '1h';
 
@@ -15,10 +15,11 @@ export const TelemetryChartsSection: React.FC<TelemetryChartsSectionProps> = ({
   settings,
 }) => {
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('5m');
-  const [activeTab, setActiveTab] = useState<'all' | 'temp' | 'humidity' | 'pressure' | 'voltage' | 'current'>('all');
+  const [activeTab, setActiveTab] = useState<
+    'all' | 'temp' | 'pwm' | 'voltage' | 'current' | 'pressure' | 'humidity'
+  >('all');
 
   // Filter history points based on selected time window
-  // Assuming updates are ~1.5 - 2s
   const filteredData = React.useMemo(() => {
     if (!history || history.length === 0) return [];
     let count = 40; // Default 1m ~30-40 points
@@ -30,38 +31,30 @@ export const TelemetryChartsSection: React.FC<TelemetryChartsSectionProps> = ({
     return history.slice(-count);
   }, [history, timeFilter]);
 
-  // Transform data for each chart
+  // 1. Temperature & Predicted Temperature Data
   const tempData: DataPoint[] = React.useMemo(
     () =>
       filteredData.map((d) => ({
         timestamp: d.timestamp,
         displayTime: d.displayTime,
         value: d.equipmentTemp,
-        value2: d.batteryTemp,
+        value2: d.predictedTemp ?? Number((d.equipmentTemp + (d.tempRateOfChange ?? 0) * 3).toFixed(1)),
       })),
     [filteredData]
   );
 
-  const humidityData: DataPoint[] = React.useMemo(
+  // 2. Heater PWM % Data
+  const pwmData: DataPoint[] = React.useMemo(
     () =>
       filteredData.map((d) => ({
         timestamp: d.timestamp,
         displayTime: d.displayTime,
-        value: d.humidity,
+        value: d.heaterPwm !== undefined ? d.heaterPwm : d.heaterState === 'ON' ? 100 : 0,
       })),
     [filteredData]
   );
 
-  const pressureData: DataPoint[] = React.useMemo(
-    () =>
-      filteredData.map((d) => ({
-        timestamp: d.timestamp,
-        displayTime: d.displayTime,
-        value: d.pressure,
-      })),
-    [filteredData]
-  );
-
+  // 3. Battery Voltage Data
   const voltageData: DataPoint[] = React.useMemo(
     () =>
       filteredData.map((d) => ({
@@ -72,12 +65,35 @@ export const TelemetryChartsSection: React.FC<TelemetryChartsSectionProps> = ({
     [filteredData]
   );
 
+  // 4. Battery Current Data
   const currentData: DataPoint[] = React.useMemo(
     () =>
       filteredData.map((d) => ({
         timestamp: d.timestamp,
         displayTime: d.displayTime,
         value: d.batteryCurrent,
+      })),
+    [filteredData]
+  );
+
+  // 5. Atmospheric Pressure Data
+  const pressureData: DataPoint[] = React.useMemo(
+    () =>
+      filteredData.map((d) => ({
+        timestamp: d.timestamp,
+        displayTime: d.displayTime,
+        value: d.pressure,
+      })),
+    [filteredData]
+  );
+
+  // 6. Humidity Data
+  const humidityData: DataPoint[] = React.useMemo(
+    () =>
+      filteredData.map((d) => ({
+        timestamp: d.timestamp,
+        displayTime: d.displayTime,
+        value: d.humidity,
       })),
     [filteredData]
   );
@@ -92,7 +108,7 @@ export const TelemetryChartsSection: React.FC<TelemetryChartsSectionProps> = ({
             REAL-TIME TELEMETRY CHARTS
           </h3>
           <span className="hidden md:inline text-xs text-slate-500 font-mono">
-            ({filteredData.length} samples buffer)
+            ({filteredData.length} samples buffer • 6 Channels)
           </span>
         </div>
 
@@ -111,17 +127,27 @@ export const TelemetryChartsSection: React.FC<TelemetryChartsSectionProps> = ({
             </button>
             <button
               onClick={() => setActiveTab('temp')}
-              className={`px-2 py-1 rounded transition-colors ${
+              className={`px-2.5 py-1 rounded transition-colors ${
                 activeTab === 'temp'
                   ? 'bg-rose-500/20 text-rose-300 font-semibold'
                   : 'text-slate-400 hover:text-white'
               }`}
             >
-              Temp
+              Temp &amp; Pred
+            </button>
+            <button
+              onClick={() => setActiveTab('pwm')}
+              className={`px-2.5 py-1 rounded transition-colors ${
+                activeTab === 'pwm'
+                  ? 'bg-orange-500/20 text-orange-300 font-semibold'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Heater PWM
             </button>
             <button
               onClick={() => setActiveTab('voltage')}
-              className={`px-2 py-1 rounded transition-colors ${
+              className={`px-2.5 py-1 rounded transition-colors ${
                 activeTab === 'voltage'
                   ? 'bg-emerald-500/20 text-emerald-300 font-semibold'
                   : 'text-slate-400 hover:text-white'
@@ -131,7 +157,7 @@ export const TelemetryChartsSection: React.FC<TelemetryChartsSectionProps> = ({
             </button>
             <button
               onClick={() => setActiveTab('current')}
-              className={`px-2 py-1 rounded transition-colors ${
+              className={`px-2.5 py-1 rounded transition-colors ${
                 activeTab === 'current'
                   ? 'bg-amber-500/20 text-amber-300 font-semibold'
                   : 'text-slate-400 hover:text-white'
@@ -140,24 +166,24 @@ export const TelemetryChartsSection: React.FC<TelemetryChartsSectionProps> = ({
               Current
             </button>
             <button
-              onClick={() => setActiveTab('humidity')}
-              className={`px-2 py-1 rounded transition-colors ${
-                activeTab === 'humidity'
-                  ? 'bg-blue-500/20 text-blue-300 font-semibold'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              Humidity
-            </button>
-            <button
               onClick={() => setActiveTab('pressure')}
-              className={`px-2 py-1 rounded transition-colors ${
+              className={`px-2.5 py-1 rounded transition-colors ${
                 activeTab === 'pressure'
                   ? 'bg-purple-500/20 text-purple-300 font-semibold'
                   : 'text-slate-400 hover:text-white'
               }`}
             >
               Pressure
+            </button>
+            <button
+              onClick={() => setActiveTab('humidity')}
+              className={`px-2.5 py-1 rounded transition-colors ${
+                activeTab === 'humidity'
+                  ? 'bg-blue-500/20 text-blue-300 font-semibold'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Humidity
             </button>
           </div>
 
@@ -184,186 +210,210 @@ export const TelemetryChartsSection: React.FC<TelemetryChartsSectionProps> = ({
       {/* Grid or Single Chart View */}
       {activeTab === 'all' ? (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {/* Temperature Chart (Col span 2 on large for prominence) */}
+          {/* Temperature & Predicted Temperature (Col span 2 on large for prominence) */}
           <div className="lg:col-span-2">
             <TelemetryChart
-              title="Temperature vs Time"
-              subtitle="Dual Channel: PT100 RTD & Li-Ion Core"
+              title="Temperature vs Predicted Temperature"
+              subtitle="Current Telemetry & 5-Min Extrapolated Projection (Dual Curve)"
               unit="°C"
-              series1Name="Equipment Temp"
+              series1Name="Current Equipment Temp"
               series1Color="#f43f5e"
-              series2Name="Battery Temp"
-              series2Color="#38bdf8"
+              series2Name="Predicted Temp (5m Horizon)"
+              series2Color="#c084fc"
               data={tempData}
               height={230}
               thresholdLine={{
                 value: settings.heaterAutoThreshold,
-                label: 'Auto Heater Trigger',
+                label: `Auto Threshold (${settings.heaterAutoThreshold}°C)`,
                 color: '#f59e0b',
               }}
               secondaryThresholdLine={{
                 value: settings.minEquipmentTemp,
-                label: 'Critical Freeze',
+                label: `Freeze Cutoff (${settings.minEquipmentTemp}°C)`,
                 color: '#ef4444',
               }}
             />
           </div>
 
+          {/* Heater PWM % Duty Cycle */}
+          <TelemetryChart
+            title="Adaptive Heater PWM Duty Cycle"
+            subtitle="Modulated 0–100% Closed-Loop Power Dissipation"
+            unit="%"
+            series1Name="Heater PWM Level"
+            series1Color="#f97316"
+            data={pwmData}
+            height={200}
+            thresholdLine={{
+              value: 70,
+              label: 'High Power Band (70%)',
+              color: '#ef4444',
+            }}
+          />
+
           {/* Voltage vs Time */}
           <TelemetryChart
             title="Battery Voltage vs Time"
-            subtitle="INA219 High-Side Bus Monitor"
+            subtitle="INA219 High-Side Power Bus"
             unit="V"
-            series1Name="Bus Voltage"
+            series1Name="Pack Voltage"
             series1Color="#10b981"
             data={voltageData}
             height={200}
             thresholdLine={{
               value: settings.minBatteryVoltage,
-              label: 'Min LVD Limit',
+              label: `LVD Cutoff (${settings.minBatteryVoltage}V)`,
               color: '#ef4444',
             }}
           />
 
           {/* Current vs Time */}
           <TelemetryChart
-            title="Battery Current vs Time"
-            subtitle="Total System & Heater Load"
+            title="Battery Current Draw vs Time"
+            subtitle="Load Current including PTC Element & Microcontroller"
             unit="A"
-            series1Name="Draw Current"
-            series1Color="#f59e0b"
+            series1Name="Current Draw"
+            series1Color="#fbbf24"
             data={currentData}
             height={200}
             thresholdLine={{
               value: settings.maxCurrent,
-              label: 'Max Safe Current',
+              label: `Trip Current (${settings.maxCurrent}A)`,
               color: '#ef4444',
             }}
           />
 
-          {/* Humidity vs Time */}
-          <TelemetryChart
-            title="Humidity vs Time"
-            subtitle="BME280 Environmental RH"
-            unit="%"
-            series1Name="Relative Humidity"
-            series1Color="#06b6d4"
-            data={humidityData}
-            height={200}
-            thresholdLine={{
-              value: settings.maxHumidity,
-              label: 'Condensation Ceiling',
-              color: '#f97316',
-            }}
-          />
-
-          {/* Pressure vs Time */}
+          {/* Atmospheric Pressure vs Time */}
           <TelemetryChart
             title="Atmospheric Pressure vs Time"
-            subtitle="Hypobaric Barometer (Ladakh Alt)"
+            subtitle="BME280 Ladakh Hypobaric Altitude Monitor"
             unit="hPa"
-            series1Name="Atm Pressure"
+            series1Name="Atmospheric Pressure"
             series1Color="#a855f7"
             data={pressureData}
             height={200}
             thresholdLine={{
               value: settings.minPressure,
-              label: 'Extreme Low Pressure',
+              label: `Min Altitude Limit (${settings.minPressure} hPa)`,
               color: '#ef4444',
             }}
           />
-        </div>
-      ) : (
-        /* Focused Single View with Expanded Height */
-        <div>
-          {activeTab === 'temp' && (
+
+          {/* Humidity vs Time */}
+          <div className="lg:col-span-2">
             <TelemetryChart
-              title="Equipment & Battery Temperature vs Time"
-              subtitle="Dual Channel RTD & NTC Probe Telemetry"
-              unit="°C"
-              series1Name="Equipment Temp"
-              series1Color="#f43f5e"
-              series2Name="Battery Core Temp"
-              series2Color="#38bdf8"
-              data={tempData}
-              height={360}
-              thresholdLine={{
-                value: settings.heaterAutoThreshold,
-                label: 'Auto Heater Active Threshold',
-                color: '#f59e0b',
-              }}
-              secondaryThresholdLine={{
-                value: settings.minEquipmentTemp,
-                label: 'Critical Freeze Envelope',
-                color: '#ef4444',
-              }}
-            />
-          )}
-          {activeTab === 'voltage' && (
-            <TelemetryChart
-              title="Battery Terminal Voltage vs Time"
-              subtitle="High-Resolution Discharge Curve"
-              unit="V"
-              series1Name="Terminal Voltage"
-              series1Color="#10b981"
-              data={voltageData}
-              height={360}
-              thresholdLine={{
-                value: settings.minBatteryVoltage,
-                label: 'Minimum Cutoff Voltage',
-                color: '#ef4444',
-              }}
-            />
-          )}
-          {activeTab === 'current' && (
-            <TelemetryChart
-              title="System Battery Current vs Time"
-              subtitle="Load Profile: Telemetry + Active PTC Heat Pads"
-              unit="A"
-              series1Name="Discharge Current"
-              series1Color="#f59e0b"
-              data={currentData}
-              height={360}
-              thresholdLine={{
-                value: settings.maxCurrent,
-                label: 'Maximum Current Rating',
-                color: '#ef4444',
-              }}
-            />
-          )}
-          {activeTab === 'humidity' && (
-            <TelemetryChart
-              title="Enclosure Relative Humidity vs Time"
-              subtitle="Dew Point & Frost Precipitation Hazard Monitoring"
+              title="Relative Humidity vs Time"
+              subtitle="BME280 Internal Enclosure Moisture Level"
               unit="%"
               series1Name="Relative Humidity"
-              series1Color="#06b6d4"
+              series1Color="#38bdf8"
               data={humidityData}
-              height={360}
+              height={190}
               thresholdLine={{
                 value: settings.maxHumidity,
-                label: 'Critical Condensation Threshold',
-                color: '#f97316',
+                label: `Condensation Risk Limit (${settings.maxHumidity}%)`,
+                color: '#f43f5e',
               }}
             />
-          )}
-          {activeTab === 'pressure' && (
-            <TelemetryChart
-              title="High-Altitude Barometric Pressure vs Time"
-              subtitle="Altitude-Correlated Ambient Pressure Telemetry"
-              unit="hPa"
-              series1Name="Ambient Barometric Pressure"
-              series1Color="#a855f7"
-              data={pressureData}
-              height={360}
-              thresholdLine={{
-                value: settings.minPressure,
-                label: 'Lower Hypobaric Envelope',
-                color: '#ef4444',
-              }}
-            />
-          )}
+          </div>
         </div>
+      ) : activeTab === 'temp' ? (
+        <TelemetryChart
+          title="High-Resolution Temperature & Predictive Trajectory"
+          subtitle="Dual Overlay: PT100 RTD Hardware Temp vs Predictive Kinematic Model"
+          unit="°C"
+          series1Name="Equipment Core Temp"
+          series1Color="#f43f5e"
+          series2Name="Predicted Temp (5m Horizon)"
+          series2Color="#c084fc"
+          data={tempData}
+          height={380}
+          thresholdLine={{
+            value: settings.heaterAutoThreshold,
+            label: `Auto Heater Engage (${settings.heaterAutoThreshold}°C)`,
+            color: '#f59e0b',
+          }}
+          secondaryThresholdLine={{
+            value: settings.minEquipmentTemp,
+            label: `Critical Low Freeze (${settings.minEquipmentTemp}°C)`,
+            color: '#ef4444',
+          }}
+        />
+      ) : activeTab === 'pwm' ? (
+        <TelemetryChart
+          title="Heater Software PWM Modulation Curve"
+          subtitle="Dynamic 0 - 100% Duty Cycle modulated by rate of change and battery health"
+          unit="%"
+          series1Name="PWM Duty Cycle"
+          series1Color="#f97316"
+          data={pwmData}
+          height={380}
+          thresholdLine={{
+            value: 70,
+            label: 'High Output Threshold (70%)',
+            color: '#ef4444',
+          }}
+        />
+      ) : activeTab === 'voltage' ? (
+        <TelemetryChart
+          title="Battery Bus Voltage Stream"
+          subtitle="Telemetry Bus terminal voltage with Low Voltage Disconnect boundary"
+          unit="V"
+          series1Name="Battery Voltage"
+          series1Color="#10b981"
+          data={voltageData}
+          height={380}
+          thresholdLine={{
+            value: settings.minBatteryVoltage,
+            label: `LVD Cutoff (${settings.minBatteryVoltage}V)`,
+            color: '#ef4444',
+          }}
+        />
+      ) : activeTab === 'current' ? (
+        <TelemetryChart
+          title="Electrical Current Dissipation Stream"
+          subtitle="Dynamic load profile of electronics and heating element array"
+          unit="A"
+          series1Name="Current"
+          series1Color="#fbbf24"
+          data={currentData}
+          height={380}
+          thresholdLine={{
+            value: settings.maxCurrent,
+            label: `Trip Current (${settings.maxCurrent}A)`,
+            color: '#ef4444',
+          }}
+        />
+      ) : activeTab === 'pressure' ? (
+        <TelemetryChart
+          title="High-Altitude Barometric Pressure"
+          subtitle="BME280 Sensor in Ladakh hypobaric alpine profile (~4,500m AMSL)"
+          unit="hPa"
+          series1Name="Pressure"
+          series1Color="#a855f7"
+          data={pressureData}
+          height={380}
+          thresholdLine={{
+            value: settings.minPressure,
+            label: `Min Altitude Boundary (${settings.minPressure} hPa)`,
+            color: '#ef4444',
+          }}
+        />
+      ) : (
+        <TelemetryChart
+          title="Internal Relative Humidity Analysis"
+          subtitle="Enclosure seal integrity and desiccator monitoring"
+          unit="%"
+          series1Name="Humidity"
+          series1Color="#38bdf8"
+          data={humidityData}
+          height={380}
+          thresholdLine={{
+            value: settings.maxHumidity,
+            label: `Max Humidity Boundary (${settings.maxHumidity}%)`,
+            color: '#f43f5e',
+          }}
+        />
       )}
     </div>
   );

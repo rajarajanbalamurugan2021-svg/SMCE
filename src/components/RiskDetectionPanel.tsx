@@ -77,6 +77,15 @@ export const RiskDetectionPanel: React.FC<RiskDetectionPanelProps> = ({
             </div>
           </div>
 
+          <div className="hidden sm:flex items-center gap-1.5 text-xs font-mono">
+            <span className="bg-slate-950 px-2.5 py-1.5 rounded-lg border border-slate-800 text-slate-300">
+              Env: <strong className="text-cyan-400">{assessment.environmentalRisk ?? 'SAFE'}</strong>
+            </span>
+            <span className="bg-slate-950 px-2.5 py-1.5 rounded-lg border border-slate-800 text-slate-300">
+              Condensation: <strong className={assessment.condensationRisk === 'HIGH' ? 'text-rose-400' : 'text-emerald-400'}>{assessment.condensationRisk ?? 'LOW'}</strong>
+            </span>
+          </div>
+
           <div
             className={`px-3 py-1.5 rounded-lg border font-mono text-xs font-bold flex items-center gap-1.5 ${
               assessment.activeCriticalCount > 0

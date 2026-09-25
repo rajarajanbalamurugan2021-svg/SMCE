@@ -31,6 +31,8 @@ import {
 import { Header } from './components/Header';
 import { Sidebar, NavTab } from './components/Sidebar';
 import { SystemStatusHero } from './components/SystemStatusHero';
+import { MahapsIntelligentPipeline } from './components/MahapsIntelligentPipeline';
+import { MahapsAdvancedCards } from './components/MahapsAdvancedCards';
 import { SensorCards } from './components/SensorCards';
 import { ProtectionPanel } from './components/ProtectionPanel';
 import { RiskDetectionPanel } from './components/RiskDetectionPanel';
@@ -92,8 +94,30 @@ export default function App() {
     tempProtection: 'INACTIVE',
     batteryProtection: 'INACTIVE',
     systemProtection: 'INACTIVE',
-    lastTriggerReason: 'System operating within safe thermal envelope.',
+    lastTriggerReason: 'MAHAPS predictive loop standby. Thermal parameters nominal.',
     heaterPowerWatts: 0,
+    heaterPwm: 0,
+    predictedTemp: -16.8,
+    tempRateOfChange: -0.15,
+    tempTrend: 'STABLE',
+    thermalRisk: 'SAFE',
+    thermalControlMode: 'PREDICTIVE',
+    learning: {
+      heatingEfficiency: 88,
+      lastHeatingResponseSec: 18,
+      adaptiveFactor: 1.12,
+      samplesCount: 32,
+      lastLearnedRate: 0.42,
+    },
+    fanStatus: 'OFF',
+    fanPwm: 0,
+    activeFaults: [],
+    systemHealthScore: 94,
+    condensationRisk: 'LOW',
+    environmentalRisk: 'SAFE',
+    dewPoint: -24.5,
+    dewPointMargin: 8.1,
+    batterySoc: 85,
   });
 
   // Telemetry History (Last ~300 readings for live charts)
@@ -292,16 +316,35 @@ export default function App() {
           {
             ...protection,
             heaterStatus: packet.heater,
-          }
+          },
+          history
         );
         setProtection(protectionState);
 
-        const assessment = evaluateRisks(rawReading, settings, packet.heater);
+        const assessment = evaluateRisks(
+          rawReading,
+          settings,
+          packet.heater,
+          history,
+          protectionState.activeFaults
+        );
 
         const currentReading: SensorReading = {
           ...rawReading,
           heaterState: packet.heater,
           systemStatus: assessment.overallStatus,
+          predictedTemp: protectionState.predictedTemp,
+          tempRateOfChange: protectionState.tempRateOfChange,
+          tempTrend: protectionState.tempTrend,
+          heaterPwm: protectionState.heaterPwm,
+          dewPoint: assessment.dewPoint,
+          dewPointMargin: assessment.dewPointMargin,
+          condensationRisk: assessment.condensationRisk,
+          environmentalRisk: assessment.environmentalRisk,
+          thermalRisk: protectionState.thermalRisk,
+          thermalControlMode: protectionState.thermalControlMode,
+          systemHealthScore: protectionState.systemHealthScore,
+          batterySoc: protectionState.batterySoc,
         };
 
         setHistory((prev) => {
@@ -377,8 +420,13 @@ export default function App() {
       const displayTime = now.toTimeString().split(' ')[0];
       const isoStr = now.toISOString();
 
-      // 1. Step simulation physics forward (taking current heater status into account)
-      const nextSim = stepSimulation(simState, protection.heaterStatus === 'ON', settings);
+      // 1. Step simulation physics forward (taking current heater PWM and faults into account)
+      const nextSim = stepSimulation(
+        simState,
+        protection.heaterStatus === 'ON',
+        settings,
+        protection.heaterPwm
+      );
       setSimState(nextSim);
 
       const rawReading = {
@@ -392,22 +440,46 @@ export default function App() {
         batteryCurrent: nextSim.batteryCurrent,
       };
 
-      // 2. Evaluate Protection Control Decision (Heater ON/OFF, thermal loop)
+      // 2. Evaluate Protection Control Decision (Heater ON/OFF, PWM modulation, predictive model)
       const { newHeaterState, protectionState, newAlerts: protAlerts } = evaluateProtectionLogic(
         rawReading,
         settings,
-        protection
+        protection,
+        history,
+        {
+          simulatedHeaterFault: nextSim.simulatedHeaterFault,
+          simulatedSensorFault: nextSim.simulatedSensorFault,
+          simulatedFanFault: nextSim.simulatedFanFault,
+        }
       );
       setProtection(protectionState);
 
-      // 3. Evaluate Environmental & Equipment Risks
-      const assessment = evaluateRisks(rawReading, settings, newHeaterState);
+      // 3. Evaluate Environmental & Equipment Risks (with condensation & health score)
+      const assessment = evaluateRisks(
+        rawReading,
+        settings,
+        newHeaterState,
+        history,
+        protectionState.activeFaults
+      );
 
-      // 4. Assemble complete sensor reading
+      // 4. Assemble complete sensor reading with MAHAPS parameters
       const currentReading: SensorReading = {
         ...rawReading,
         heaterState: newHeaterState,
         systemStatus: assessment.overallStatus,
+        predictedTemp: protectionState.predictedTemp,
+        tempRateOfChange: protectionState.tempRateOfChange,
+        tempTrend: protectionState.tempTrend,
+        heaterPwm: protectionState.heaterPwm,
+        dewPoint: assessment.dewPoint,
+        dewPointMargin: assessment.dewPointMargin,
+        condensationRisk: assessment.condensationRisk,
+        environmentalRisk: assessment.environmentalRisk,
+        thermalRisk: protectionState.thermalRisk,
+        thermalControlMode: protectionState.thermalControlMode,
+        systemHealthScore: protectionState.systemHealthScore,
+        batterySoc: protectionState.batterySoc,
       };
 
       // Update previous reading
@@ -510,38 +582,49 @@ export default function App() {
 
   // Active risk assessment computed against current reading
   const assessment: RiskAssessment = useMemo(() => {
-    return evaluateRisks(currentReading, settings, protection.heaterStatus);
-  }, [currentReading, settings, protection.heaterStatus]);
+    return evaluateRisks(
+      currentReading,
+      settings,
+      protection.heaterStatus,
+      history,
+      protection.activeFaults
+    );
+  }, [currentReading, settings, protection.heaterStatus, history, protection.activeFaults]);
 
   // Overall system status
   const currentSystemStatus: SystemStatus = assessment.overallStatus;
 
   // Handlers
-  const handleSetHeaterMode = (mode: HeaterMode) => {
+  const handleSetHeaterMode = (mode: HeaterMode, manualPwm?: number) => {
     let nextStatus: 'ON' | 'OFF' = protection.heaterStatus;
     let reason = protection.lastTriggerReason;
+    let nextPwm = protection.heaterPwm;
 
     if (mode === 'ON') {
       nextStatus = 'ON';
-      reason = 'Manual Override: Heater forced ON';
+      nextPwm = manualPwm ?? 100;
+      reason = `Manual Override: Heater forced ON at ${nextPwm}% PWM`;
       if (bleStatus === 'CONNECTED') {
         bleManager.sendCommand('HEATER_ON');
       }
     } else if (mode === 'OFF') {
       nextStatus = 'OFF';
-      reason = 'Manual Override: Heater forced OFF';
+      nextPwm = 0;
+      reason = 'Manual Override: Heater forced OFF (0% PWM)';
       if (bleStatus === 'CONNECTED') {
         bleManager.sendCommand('HEATER_OFF');
       }
     } else {
-      reason = 'Autonomous closed-loop mode restored.';
+      reason = 'Autonomous predictive closed-loop restored.';
       if (bleStatus === 'CONNECTED') {
         bleManager.sendCommand('HEATER_AUTO');
       }
       if (currentReading.equipmentTemp < settings.heaterAutoThreshold) {
         nextStatus = 'ON';
+        nextPwm = 65;
       } else {
         nextStatus = 'OFF';
+        nextPwm = 0;
       }
     }
 
@@ -549,9 +632,17 @@ export default function App() {
       ...prev,
       heaterMode: mode,
       heaterStatus: nextStatus,
+      heaterPwm: nextPwm,
       tempProtection: nextStatus === 'ON' ? 'ACTIVE' : 'INACTIVE',
       lastTriggerReason: reason,
-      heaterPowerWatts: nextStatus === 'ON' ? 24.5 : 0.0,
+      heaterPowerWatts: Number((24.5 * (nextPwm / 100)).toFixed(1)),
+    }));
+  };
+
+  const handleClearFault = (faultId: string) => {
+    setProtection((prev) => ({
+      ...prev,
+      activeFaults: prev.activeFaults.map((f) => (f.id === faultId ? { ...f, cleared: true } : f)),
     }));
   };
 
@@ -565,6 +656,12 @@ export default function App() {
       batteryVoltage: preset.batteryVoltage,
       batteryCurrent: preset.batteryCurrent,
       ambientColdTemp: preset.ambientColdTemp,
+      simulatedHeaterFault: !!preset.simulatedHeaterFault,
+      simulatedSensorFault: !!preset.simulatedSensorFault,
+      simulatedFanFault: !!preset.simulatedFanFault,
+      rapidCoolingActive: !!preset.rapidCoolingActive,
+      rapidHeatingActive: !!preset.rapidHeatingActive,
+      activeScenarioId: preset.id,
       manualOverrideActive: true,
     }));
   };
@@ -716,6 +813,22 @@ export default function App() {
                 uptimeSeconds={uptimeSeconds}
               />
 
+              {/* Novelty: MAHAPS Intelligent Protection Pipeline (Sense -> Analyse -> Predict -> Adapt -> Protect) */}
+              <MahapsIntelligentPipeline
+                reading={currentReading}
+                protection={protection}
+                assessment={assessment}
+              />
+
+              {/* MAHAPS 9-Point Advanced Diagnostics & Adaptive Metrics Cards */}
+              <MahapsAdvancedCards
+                reading={currentReading}
+                protection={protection}
+                assessment={assessment}
+                settings={settings}
+                onClearFault={handleClearFault}
+              />
+
               {/* Sensor Cards (6 Cards) */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
@@ -828,11 +941,25 @@ export default function App() {
           {/* 4. PROTECTION CONTROL VIEW */}
           {currentTab === 'protection' && (
             <div className="space-y-6 animate-in fade-in duration-300">
+              <MahapsIntelligentPipeline
+                reading={currentReading}
+                protection={protection}
+                assessment={assessment}
+              />
+
               <ProtectionPanel
                 protection={protection}
                 onSetHeaterMode={handleSetHeaterMode}
                 settings={settings}
                 reading={currentReading}
+              />
+
+              <MahapsAdvancedCards
+                reading={currentReading}
+                protection={protection}
+                assessment={assessment}
+                settings={settings}
+                onClearFault={handleClearFault}
               />
 
               <SystemStatusHero

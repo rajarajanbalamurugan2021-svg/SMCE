@@ -16,11 +16,16 @@ import {
   Info,
   Power,
   RotateCw,
+  TrendingDown,
+  TrendingUp,
+  Minus,
+  Sparkles,
+  Zap,
 } from 'lucide-react';
 
 interface ProtectionPanelProps {
   protection: ProtectionControlState;
-  onSetHeaterMode: (mode: HeaterMode) => void;
+  onSetHeaterMode: (mode: HeaterMode, manualPwm?: number) => void;
   settings: ThresholdSettings;
   reading: SensorReading;
 }
@@ -38,6 +43,10 @@ export const ProtectionPanel: React.FC<ProtectionPanelProps> = ({
 
   // Distance from auto trigger threshold
   const marginToHeater = reading.equipmentTemp - settings.heaterAutoThreshold;
+  const trend = protection.tempTrend ?? 'STABLE';
+  const rate = protection.tempRateOfChange ?? 0;
+  const predictedTemp = protection.predictedTemp ?? reading.equipmentTemp;
+  const pwm = protection.heaterPwm ?? (isHeaterOn ? 100 : 0);
 
   return (
     <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-5 shadow-xl space-y-5">
@@ -55,7 +64,7 @@ export const ProtectionPanel: React.FC<ProtectionPanelProps> = ({
           </div>
           <div>
             <h3 className="text-base font-bold text-white tracking-wide flex items-center gap-2">
-              PROTECTION CONTROL
+              ADAPTIVE THERMAL PROTECTION CONTROL
               <span
                 className={`text-[10px] font-mono px-2 py-0.5 rounded-full border ${
                   isSystemProtected
@@ -63,11 +72,11 @@ export const ProtectionPanel: React.FC<ProtectionPanelProps> = ({
                     : 'bg-slate-800 text-slate-400 border-slate-700'
                 }`}
               >
-                AUTONOMOUS LOOP
+                {protection.thermalControlMode ?? 'AUTONOMOUS LOOP'}
               </span>
             </h3>
             <p className="text-xs text-slate-400">
-              High-altitude thermal management &amp; low-temperature defense matrix
+              High-altitude predictive thermal management &amp; software PWM control
             </p>
           </div>
         </div>
@@ -83,7 +92,7 @@ export const ProtectionPanel: React.FC<ProtectionPanelProps> = ({
             }`}
           >
             <Radio className={`w-3.5 h-3.5 ${isSystemProtected ? 'text-cyan-400 animate-spin' : 'text-slate-400'}`} />
-            {isSystemProtected ? 'PROTECTION ENGAGED' : 'MONITORING STANDBY'}
+            {isSystemProtected ? `${protection.thermalControlMode} ACTIVE` : 'MONITORING STANDBY'}
           </span>
         </div>
       </div>
@@ -93,22 +102,24 @@ export const ProtectionPanel: React.FC<ProtectionPanelProps> = ({
         <div className="flex items-start gap-3">
           <Info className="w-5 h-5 text-cyan-400 shrink-0 mt-0.5" />
           <div>
-            <h4 className="text-sm font-semibold text-cyan-200">Autonomous Thermal Safeguard Rule:</h4>
+            <h4 className="text-sm font-semibold text-cyan-200">
+              MAHAPS Predictive &amp; Adaptive Safeguard Rule:
+            </h4>
             <p className="text-sm font-medium text-slate-100 mt-0.5 leading-relaxed">
-              If the temperature falls below the configured minimum threshold ({settings.heaterAutoThreshold}°C),
-              the system activates the heater automatically to protect the equipment.
+              If temperature falls below threshold ({settings.heaterAutoThreshold}°C) OR is rapidly declining towards critical freeze, MAHAPS proactively starts software PWM heating before the critical freeze limit is breached.
             </p>
             <div className="flex flex-wrap items-center gap-3 text-xs text-slate-400 mt-2 font-mono">
               <span className="bg-slate-950/80 px-2 py-0.5 rounded border border-slate-800">
                 Trigger Threshold: <strong className="text-amber-400">{settings.heaterAutoThreshold}°C</strong>
               </span>
               <span className="bg-slate-950/80 px-2 py-0.5 rounded border border-slate-800">
-                Deactivation Ceiling: <strong className="text-emerald-400">{settings.heaterAutoThreshold + settings.heaterHysteresis}°C</strong> (+{settings.heaterHysteresis}°C Hysteresis)
+                Predicted (5m):{' '}
+                <strong className={predictedTemp < settings.heaterAutoThreshold ? 'text-rose-400' : 'text-cyan-400'}>
+                  {predictedTemp}°C ({trend === 'FALLING' ? '↓' : trend === 'RISING' ? '↑' : '→'} {rate > 0 ? '+' : ''}{rate}°C/m)
+                </strong>
               </span>
               <span className="bg-slate-950/80 px-2 py-0.5 rounded border border-slate-800">
-                Current Margin: <strong className={marginToHeater <= 0 ? 'text-rose-400' : 'text-cyan-400'}>
-                  {marginToHeater <= 0 ? 'BREACHED (Heater Active)' : `+${marginToHeater.toFixed(1)}°C Safe`}
-                </strong>
+                PWM Level: <strong className="text-orange-400">{pwm}%</strong>
               </span>
             </div>
           </div>
@@ -117,7 +128,7 @@ export const ProtectionPanel: React.FC<ProtectionPanelProps> = ({
 
       {/* 4 Status Indicator Badges */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        {/* Heater Status */}
+        {/* Heater Status & PWM */}
         <div
           className={`p-3 rounded-lg border flex flex-col justify-between transition-all ${
             isHeaterOn
@@ -130,23 +141,24 @@ export const ProtectionPanel: React.FC<ProtectionPanelProps> = ({
             <Flame className={`w-4 h-4 ${isHeaterOn ? 'text-rose-400 animate-bounce' : 'text-slate-600'}`} />
           </div>
           <div className="mt-2 flex items-baseline justify-between">
-            <span
-              className={`text-lg font-bold font-mono ${
-                isHeaterOn ? 'text-rose-400' : 'text-slate-400'
-              }`}
-            >
-              {protection.heaterStatus}
+            <span className={`text-lg font-bold font-mono ${isHeaterOn ? 'text-rose-400' : 'text-slate-400'}`}>
+              {protection.heaterStatus} ({pwm}%)
             </span>
             <span className="text-[11px] font-mono text-slate-500">
-              {isHeaterOn ? `${protection.heaterPowerWatts} W` : '0.0 W'}
+              {protection.heaterPowerWatts} W
             </span>
           </div>
-          <div className="mt-1 text-[10px] text-slate-500 font-mono">
-            {isHeaterOn ? 'PTC Element Dissipating' : 'PTC Array Dormant'}
+          <div className="mt-1.5 w-full bg-slate-900 h-1.5 rounded-full overflow-hidden border border-slate-800">
+            <div
+              className={`h-full transition-all duration-300 ${
+                pwm > 60 ? 'bg-rose-500' : pwm > 20 ? 'bg-orange-400' : 'bg-slate-700'
+              }`}
+              style={{ width: `${pwm}%` }}
+            />
           </div>
         </div>
 
-        {/* Temperature Protection */}
+        {/* Temperature Protection & Trend */}
         <div
           className={`p-3 rounded-lg border flex flex-col justify-between transition-all ${
             isTempProtected
@@ -159,20 +171,19 @@ export const ProtectionPanel: React.FC<ProtectionPanelProps> = ({
             <Cpu className={`w-4 h-4 ${isTempProtected ? 'text-cyan-400' : 'text-slate-600'}`} />
           </div>
           <div className="mt-2 flex items-baseline justify-between">
-            <span
-              className={`text-lg font-bold font-mono ${
-                isTempProtected ? 'text-cyan-400' : 'text-slate-400'
-              }`}
-            >
+            <span className={`text-lg font-bold font-mono ${isTempProtected ? 'text-cyan-400' : 'text-slate-400'}`}>
               {protection.tempProtection}
             </span>
+            <span className="text-[10px] font-mono text-slate-400">
+              {protection.thermalRisk ?? 'SAFE'}
+            </span>
           </div>
-          <div className="mt-1 text-[10px] text-slate-500 font-mono">
-            {isTempProtected ? 'Thermal Loop Active' : 'Thermal Envelope Nominal'}
+          <div className="mt-1 text-[10px] text-slate-400 font-mono truncate">
+            {trend === 'FALLING' ? '↓ Cooling rapidly' : trend === 'RISING' ? '↑ Warming' : '→ Stable'}
           </div>
         </div>
 
-        {/* Battery Protection */}
+        {/* Battery Protection & Throttle Guard */}
         <div
           className={`p-3 rounded-lg border flex flex-col justify-between transition-all ${
             isBatteryProtected
@@ -185,20 +196,19 @@ export const ProtectionPanel: React.FC<ProtectionPanelProps> = ({
             <BatteryMedium className={`w-4 h-4 ${isBatteryProtected ? 'text-amber-400' : 'text-slate-600'}`} />
           </div>
           <div className="mt-2 flex items-baseline justify-between">
-            <span
-              className={`text-lg font-bold font-mono ${
-                isBatteryProtected ? 'text-amber-400' : 'text-slate-400'
-              }`}
-            >
+            <span className={`text-lg font-bold font-mono ${isBatteryProtected ? 'text-amber-400' : 'text-slate-400'}`}>
               {protection.batteryProtection}
             </span>
+            <span className="text-[10px] font-mono text-slate-400">
+              SOC: {protection.batterySoc ?? 80}%
+            </span>
           </div>
-          <div className="mt-1 text-[10px] text-slate-500 font-mono">
-            {isBatteryProtected ? 'Freeze Guard Engaged' : 'Cell Volt/Temp Nominal'}
+          <div className="mt-1 text-[10px] text-slate-400 font-mono truncate">
+            {isBatteryProtected ? 'Low-Voltage Throttling' : 'Bus Voltage Nominal'}
           </div>
         </div>
 
-        {/* System Protection */}
+        {/* System Protection & Health */}
         <div
           className={`p-3 rounded-lg border flex flex-col justify-between transition-all ${
             isSystemProtected
@@ -215,16 +225,15 @@ export const ProtectionPanel: React.FC<ProtectionPanelProps> = ({
             )}
           </div>
           <div className="mt-2 flex items-baseline justify-between">
-            <span
-              className={`text-lg font-bold font-mono ${
-                isSystemProtected ? 'text-cyan-400' : 'text-slate-400'
-              }`}
-            >
+            <span className={`text-lg font-bold font-mono ${isSystemProtected ? 'text-cyan-400' : 'text-slate-400'}`}>
               {protection.systemProtection}
             </span>
+            <span className="text-[10px] font-mono text-emerald-400">
+              {protection.systemHealthScore ?? 92}% Health
+            </span>
           </div>
-          <div className="mt-1 text-[10px] text-slate-500 font-mono">
-            {isSystemProtected ? 'Safety Interlocks Engaged' : 'Passive Monitoring'}
+          <div className="mt-1 text-[10px] text-slate-400 font-mono truncate">
+            {isSystemProtected ? 'Safety Interlocks Engaged' : 'Autonomous Guard'}
           </div>
         </div>
       </div>
@@ -237,14 +246,14 @@ export const ProtectionPanel: React.FC<ProtectionPanelProps> = ({
             <h4 className="text-sm font-semibold text-white">Manual Heater Control</h4>
           </div>
           <p className="text-xs text-slate-400 mt-0.5">
-            Select control mode for prototype demonstration or override automated logic.
+            Select control mode for prototype demonstration or override automated predictive logic.
           </p>
         </div>
 
         {/* 3 Buttons: ON / OFF / AUTO */}
         <div className="flex items-center p-1 bg-slate-900 border border-slate-700/80 rounded-lg">
           <button
-            onClick={() => onSetHeaterMode('ON')}
+            onClick={() => onSetHeaterMode('ON', 100)}
             className={`px-4 py-2 rounded-md text-xs font-mono font-bold transition-all flex items-center gap-1.5 ${
               protection.heaterMode === 'ON'
                 ? 'bg-rose-600 text-white shadow-lg shadow-rose-600/30 scale-105'
@@ -256,7 +265,7 @@ export const ProtectionPanel: React.FC<ProtectionPanelProps> = ({
           </button>
 
           <button
-            onClick={() => onSetHeaterMode('OFF')}
+            onClick={() => onSetHeaterMode('OFF', 0)}
             className={`px-4 py-2 rounded-md text-xs font-mono font-bold transition-all flex items-center gap-1.5 ${
               protection.heaterMode === 'OFF'
                 ? 'bg-slate-700 text-white shadow-lg scale-105'
